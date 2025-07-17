@@ -97,8 +97,21 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
                     el.ondragend = handleDragEnd;
                     el.ondragleave = handleDragLeave;
                     el.onclick = (e) => {
-                        e.preventDefault();
-                        openEditModal(btn.idx);
+                        // Only open edit modal on left click
+                        if (e.button === 0) {
+                            e.preventDefault();
+                            openEditModal(btn.idx);
+                        }
+                    };
+                    // Allow middle click to trigger normal action
+                    el.onmousedown = (e) => {
+                        if (e.button === 1) {
+                            e.preventDefault();
+                            const actionName = btn.action_id ? getActionNameById(btn.action_id) : (btn.action || '');
+                            if (window.sbClient && window.sbClient.socket.readyState === 1 && actionName) {
+                                window.sbClient.doAction({ name: actionName });
+                            }
+                        }
                     };
                 } else {
                     el.removeAttribute('draggable');

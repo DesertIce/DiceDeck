@@ -18,28 +18,28 @@
     },
     {
       "row": 0,
-      "col": 2,
+      "col": 3,
       "title": "30s Ad",
       "icon": "",
       "action_id": "900fc48b-1137-48c4-9012-a0e6fddbe5dc"
     },
     {
       "row": 0,
-      "col": 3,
+      "col": 4,
       "title": "1m Ad",
       "icon": "",
       "action_id": "76750ae8-d65f-438d-b2f4-24fb63f2fde8"
     },
     {
-      "row": 0,
-      "col": 4,
+      "row": 1,
+      "col": 6,
       "title": "Dr Coomer",
       "icon": "",
       "action_id": "4075425a-27bc-4059-a9b0-9a6697f56520"
     },
     {
       "row": 0,
-      "col": 5,
+      "col": 8,
       "title": "Cool Story Bro",
       "icon": "",
       "action_id": "8476a52f-eb50-4c88-a4d0-c7ebca403e60"
@@ -52,400 +52,386 @@
       "action_id": "f15902fa-387d-45b9-af5a-a6e1ececba84"
     },
     {
-      "row": 0,
-      "col": 8,
+      "row": 1,
+      "col": 0,
       "title": "Stop Hype Music",
       "icon": "",
       "action_id": "599e47da-3c29-4932-a728-4d8455ffafaf"
     },
     {
-      "row": 0,
-      "col": 9,
+      "row": 1,
+      "col": 1,
       "title": "- Hype Train Music",
       "icon": "",
       "action_id": "54e59d3a-0e4b-430f-97eb-c33faf8431b9"
     },
     {
-      "row": 0,
-      "col": 10,
+      "row": 1,
+      "col": 3,
       "title": "90s Ad",
       "icon": "",
       "action_id": "fcfe946a-8582-4fcc-9bc7-42823ee28fab"
     },
     {
       "row": 1,
-      "col": 0,
+      "col": 4,
       "title": "2m Ad",
       "icon": "",
       "action_id": "38b0c6f0-9964-4e08-a50d-6f145323dfd2"
     },
     {
       "row": 1,
-      "col": 1,
+      "col": 8,
       "title": "Bonk",
       "icon": "",
       "action_id": "6f95ada5-1e4d-4f56-9475-e219e5dc1360"
     },
     {
-      "row": 1,
-      "col": 2,
+      "row": 2,
+      "col": 7,
       "title": "Phrasing",
       "icon": "",
       "action_id": "d1f91509-ee97-47e9-8e63-a3dbad7eb746"
     },
     {
-      "row": 1,
-      "col": 3,
+      "row": 2,
+      "col": 10,
       "title": "Airhorn",
       "icon": "",
       "action_id": "31d3c8bf-1d77-4c5d-9384-32ec5028608f"
     },
     {
-      "row": 1,
-      "col": 4,
+      "row": 2,
+      "col": 3,
       "title": "150s Ad",
       "icon": "",
       "action_id": "d86c8a32-ec6e-43c0-9d8d-44cd61f4a8c2"
     },
     {
-      "row": 1,
-      "col": 5,
+      "row": 2,
+      "col": 4,
       "title": "3m Ad",
       "icon": "",
       "action_id": "de8830ee-5a7c-49eb-9f49-a0b3be88d661"
     },
     {
       "row": 1,
-      "col": 6,
+      "col": 7,
       "title": "Pills",
       "icon": "",
       "action_id": "b61e6d6f-af27-4e62-a01b-4f8647871993"
     },
     {
-      "row": 1,
-      "col": 8,
+      "row": 0,
+      "col": 9,
       "title": "RimShot",
       "icon": "",
       "action_id": "5f26a922-fef1-4e3d-9d6e-01740b57d41d"
     },
     {
       "row": 1,
-      "col": 9,
+      "col": 10,
       "title": "Cheer",
       "icon": "",
       "action_id": "ae2402ee-d56a-400e-b71f-356ac7a435c1"
     },
     {
-      "row": 1,
-      "col": 10,
+      "row": 0,
+      "col": 7,
       "title": "Anime Wow",
       "icon": "",
       "action_id": "8332013d-cbcc-426d-b42d-6b0e161668c1"
     },
     {
       "row": 2,
-      "col": 0,
+      "col": 6,
       "title": "Fart",
       "icon": "",
       "action_id": "2158b365-43f0-4b82-8550-92d3b1da6c47"
     },
     {
-      "row": 2,
-      "col": 1,
+      "row": 0,
+      "col": 10,
       "title": "Applause",
       "icon": "",
       "action_id": "9b0f9d02-ea04-47fb-a019-b6d14b40a183"
     },
     {
-      "row": 2,
-      "col": 2,
+      "row": 4,
+      "col": 0,
       "title": "Enable Cam",
       "icon": "",
       "action_id": "ebab4225-bf49-4a19-8546-0a904170a907"
     },
     {
-      "row": 2,
-      "col": 3,
+      "row": 4,
+      "col": 1,
       "title": "Disable Cam",
       "icon": "",
       "action_id": "3c15a6d3-5baa-45c6-82ab-921634dd2eef"
     },
     {
-      "row": 2,
-      "col": 4,
+      "row": 1,
+      "col": 9,
       "title": "Laughter",
       "icon": "",
       "action_id": "cd33557c-d938-42ec-9782-b0e43e3c1658"
     },
     {
       "row": 2,
-      "col": 5,
+      "col": 9,
       "title": "Heyoo",
       "icon": "",
       "action_id": "3c81c05e-5934-4f1d-b89f-762f32223358"
     },
     {
       "row": 2,
-      "col": 6,
+      "col": 8,
       "title": "Num Num Num",
       "icon": "",
       "action_id": "3bd94179-f6ba-431d-a6fa-ce393646d417"
     },
     {
-      "row": 2,
-      "col": 8,
+      "row": 3,
+      "col": 0,
       "title": "Enable Cam Blur",
       "icon": "",
       "action_id": "4332a50c-8646-432b-a066-dd59a4bb48f4"
     },
     {
-      "row": 2,
-      "col": 9,
+      "row": 3,
+      "col": 1,
       "title": "Disable Cam Blur",
       "icon": "",
       "action_id": "95288ae2-2d23-47fd-af7a-614d37dd6654"
     },
     {
-      "row": 2,
-      "col": 10,
+      "row": 5,
+      "col": 8,
       "title": "Dad Joke",
       "icon": "",
       "action_id": "e8e22ebb-c889-414b-927f-702b33724203"
     },
     {
-      "row": 3,
-      "col": 0,
+      "row": 5,
+      "col": 4,
       "title": "Screenshot",
       "icon": "",
       "action_id": "97510037-edfe-4b33-9304-a1d597dfccf5"
     },
     {
-      "row": 3,
-      "col": 1,
+      "row": 5,
+      "col": 3,
       "title": "Yes/No Poll",
       "icon": "",
       "action_id": "989e6de6-647e-4f2d-bdc3-a8fb063c90c8"
     },
     {
-      "row": 3,
-      "col": 2,
+      "row": 7,
+      "col": 5,
       "title": "Toggle",
       "icon": "ic:outline-question-mark",
       "action_id": "50eb8a20-c344-44ca-a89f-c57bd6953dcd"
     },
     {
-      "row": 3,
-      "col": 3,
+      "row": 5,
+      "col": 7,
       "title": "!Song",
       "icon": "",
       "action_id": "dc8b8a31-91ca-4e82-b3ed-5d76c4725731"
     },
     {
-      "row": 3,
-      "col": 4,
+      "row": 4,
+      "col": 7,
       "title": "!english",
       "icon": "",
       "action_id": "f8988697-b5e3-40a8-b974-553df4947ee4"
     },
     {
-      "row": 3,
+      "row": 6,
       "col": 5,
       "title": "Toggle Studio",
       "icon": "",
       "action_id": "c782587f-27e9-46ee-a772-5fc2617c62f3"
     },
     {
-      "row": 3,
-      "col": 6,
+      "row": 4,
+      "col": 10,
       "title": "Chat Scene",
       "icon": "",
       "action_id": "e1f33814-b921-46b3-8d63-49c54aec84ad"
     },
     {
-      "row": 3,
+      "row": 6,
       "col": 8,
       "title": "Geek Joke",
       "icon": "",
       "action_id": "406528ab-d2fd-44e1-8ae4-a50e5c7053b9"
     },
     {
-      "row": 3,
-      "col": 9,
+      "row": 7,
+      "col": 8,
       "title": "Joke",
       "icon": "",
       "action_id": "291f1730-db7f-43c6-929e-b79e080be7a2"
     },
     {
-      "row": 3,
-      "col": 10,
+      "row": 7,
+      "col": 3,
       "title": "Clear SB manual redeems",
       "icon": "",
       "action_id": "d1ac91da-8d81-4ecb-9a38-8500d776eaac"
     },
     {
-      "row": 4,
-      "col": 0,
+      "row": 6,
+      "col": 3,
       "title": "Tangia Skip",
       "icon": "",
       "action_id": "75197208-6f29-44b9-9398-0256276e370c"
     },
     {
-      "row": 4,
-      "col": 1,
-      "title": "Crew",
-      "icon": "",
-      "action_id": "ad8e9bff-7746-4aa6-a8ab-aa4ee304f4af"
-    },
-    {
-      "row": 4,
-      "col": 2,
-      "title": "Hide Q&amp;A Widget",
-      "icon": "",
-      "action_id": "50eb8a20-c344-44ca-a89f-c57bd6953dcd"
-    },
-    {
-      "row": 4,
-      "col": 3,
+      "row": 5,
+      "col": 9,
       "title": "Game Scene",
       "icon": "",
       "action_id": "73636f51-c177-4fcd-bb36-7e20ed933d77"
     },
     {
       "row": 4,
-      "col": 4,
+      "col": 9,
       "title": "Start Scene",
       "icon": "",
       "action_id": "b9fd64a2-02b3-4512-9d66-2aed89620f19"
     },
     {
-      "row": 4,
-      "col": 5,
+      "row": 6,
+      "col": 0,
       "title": "Hydrate  Accept",
       "icon": "",
       "action_id": "8cf228d4-edc9-4929-88bb-5105a68ce113"
     },
     {
-      "row": 4,
-      "col": 6,
+      "row": 6,
+      "col": 2,
       "title": "Posture Accept",
       "icon": "",
       "action_id": "c9860d30-30d4-42f9-822b-fe12880f15c6"
     },
     {
-      "row": 4,
-      "col": 8,
+      "row": 6,
+      "col": 1,
       "title": "Stretch Accept",
       "icon": "",
       "action_id": "21cea105-acd0-4f11-a555-9f2df0adda45"
     },
     {
-      "row": 4,
-      "col": 9,
+      "row": 6,
+      "col": 4,
       "title": "OBS Mic Mute",
       "icon": "",
       "action_id": "28be8502-6594-4f95-b5a1-884cfd98b0bf"
     },
     {
-      "row": 4,
-      "col": 10,
+      "row": 6,
+      "col": 7,
       "title": "BotFollowAlert",
       "icon": "",
       "action_id": "6a850015-c298-4ba4-ba69-ad5588b83a3c"
     },
     {
       "row": 5,
-      "col": 0,
+      "col": 6,
       "title": "Socials",
       "icon": "",
       "action_id": "b9e0e2aa-5689-43ba-bba0-ecaf381d9e7d"
     },
     {
-      "row": 5,
-      "col": 1,
+      "row": 6,
+      "col": 6,
       "title": "!Sere",
       "icon": "",
       "action_id": "3f3452c7-d9fb-47f5-bacb-6b0e41abbde7"
     },
     {
-      "row": 5,
-      "col": 2,
+      "row": 6,
+      "col": 10,
       "title": "Break Scene",
       "icon": "",
       "action_id": "9632dbca-961c-41b0-ab62-4f27d6efaffb"
     },
     {
       "row": 5,
-      "col": 3,
+      "col": 10,
       "title": "CoWork Scene",
       "icon": "",
       "action_id": "b448ab80-b76f-4795-9303-cd85ff6bfa26"
     },
     {
-      "row": 5,
-      "col": 4,
+      "row": 7,
+      "col": 0,
       "title": "Hydrate Refund",
       "icon": "",
       "action_id": "e2307a50-b112-46c9-9865-0585ad971ef0"
     },
     {
-      "row": 5,
-      "col": 5,
+      "row": 7,
+      "col": 2,
       "title": "Posture Refund",
       "icon": "",
       "action_id": "bf4d46eb-7dea-4ed7-a65e-21cb1ab3f5b5"
     },
     {
-      "row": 5,
-      "col": 6,
+      "row": 7,
+      "col": 1,
       "title": "Stretch Refund",
       "icon": "",
       "action_id": "fc4618c1-9c08-45a0-a556-e85f33caacec"
     },
     {
-      "row": 5,
-      "col": 8,
+      "row": 7,
+      "col": 4,
       "title": "OBS Mic Unmute",
       "icon": "",
       "action_id": "638cae45-83dc-414e-a495-dcfeb4b1b2a0"
     },
     {
-      "row": 5,
-      "col": 9,
+      "row": 7,
+      "col": 7,
       "title": "Hate Raid",
       "icon": "",
       "action_id": "afa39ee7-1466-44de-8f34-8226d22788ed"
     },
     {
-      "row": 5,
-      "col": 10,
+      "row": 4,
+      "col": 6,
       "title": "Discord Link",
       "icon": "",
       "action_id": "e4b02876-9de3-4146-8d99-6bba739f0c89"
     },
     {
-      "row": 6,
-      "col": 0,
+      "row": 7,
+      "col": 6,
       "title": "Clip Marker",
       "icon": "",
       "action_id": "bc101835-da9e-4d08-99c0-9f149664cc88"
     },
     {
-      "row": 6,
-      "col": 1,
+      "row": 7,
+      "col": 9,
       "title": "End Scene",
       "icon": "",
       "action_id": "1cb0e3b3-abe9-47cb-a005-83699339255b"
     },
     {
       "row": 6,
-      "col": 2,
+      "col": 9,
       "title": "Browser Scene",
       "icon": "",
       "action_id": "e36721f9-a4aa-4dd1-be6c-a42cff41087c"
     },
     {
       "row": 7,
-      "col": 7,
+      "col": 10,
       "title": "Longer Break Scene",
       "icon": "",
       "action_id": "a8aa2372-b035-43d2-a87f-ccc915b4f508"
