@@ -176,15 +176,44 @@ body, html {
   width: 100vw;
   height: calc(100vh - 32px);
   margin-top: 32px;
+  padding-top: 8px;
+  padding-left: 8px;
+  padding-right: 8px;
   align-items: center;
   justify-items: center;
-  background: rgba(30, 32, 40, 0.25);
-  box-sizing: border-box;
-  place-items: center;
-  border-radius: 24px;
-  backdrop-filter: blur(16px) saturate(1.1);
-  -webkit-backdrop-filter: blur(16px) saturate(1.1);
-  box-shadow: 0 8px 32px 0 rgba(0,0,0,0.18);
+  background: rgba(30, 32, 40, 0.025);
+  backdrop-filter: blur(42px) saturate(1.38);
+  -webkit-backdrop-filter: blur(42px) saturate(1.38);
+  border: 1.5px solid rgba(255,255,255,0.22);
+  box-shadow: 0 8px 32px 0 rgba(0,0,0,0.18), 0 0 32px 0 rgba(255,255,255,0.10) inset;
+  position: relative;
+  border-radius: 0;
+}
+
+.grid-settings-fab {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 10;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #23272f 80%, #00ffff44 100%);
+  color: #00ffff;
+  border: none;
+  box-shadow: 0 4px 16px 0 rgba(0,0,0,0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+  outline: none;
+}
+.grid-settings-fab:hover {
+  background: linear-gradient(135deg, #23272f 60%, #00ffff88 100%);
+  color: #fff;
+  box-shadow: 0 6px 24px 0 rgba(0,255,255,0.18);
 }
 
 /* Button styles */
@@ -207,7 +236,8 @@ body, html {
   cursor: pointer;
   user-select: none;
   transition: background 0.2s, box-shadow 0.2s, transform 0.1s, outline 0.2s;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.25);
+  box-shadow: 6px 8px 16px 0 rgba(0,0,0,0.48), 1px 2px 8px 0 rgba(0,255,255,0.10) inset;
+  border: 1.5px solid rgba(255,255,255,0.18);
   touch-action: manipulation;
   font-family: inherit;
   font-weight: 600;

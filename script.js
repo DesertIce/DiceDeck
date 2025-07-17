@@ -29,6 +29,18 @@ function renderGrid({ rows, cols, buttons }) {
     grid.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
     grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
 
+    // Add grid settings button in edit mode
+    if (editMode) {
+        let gridSettingsBtn = document.createElement('button');
+        gridSettingsBtn.id = 'grid-settings-btn';
+        gridSettingsBtn.className = 'grid-settings-fab';
+        gridSettingsBtn.title = 'Set grid rows/columns';
+        gridSettingsBtn.innerHTML = '<span class="iconify" data-icon="ic:outline-grid-on"></span>';
+        gridSettingsBtn.onclick = openGridSettingsModal;
+        grid.appendChild(gridSettingsBtn);
+        if (window.Iconify) window.Iconify.scan(gridSettingsBtn);
+    }
+
     // Create a map for quick lookup
     const btnMap = {};
     buttons.forEach((btn, idx) => {
@@ -68,7 +80,7 @@ function renderGrid({ rows, cols, buttons }) {
                     el.ondragend = null;
                     el.ondragleave = null;
                     el.onclick = async (e) => {
-                        if (window.sbClient && window.sbClient.isConnected) {
+                        if (window.sbClient && window.sbClient.socket.readyState === 1) {
                             try {
                                 await window.sbClient.doAction({ name: btn.action });
                             } catch (err) {
@@ -152,16 +164,81 @@ function handleDragLeave(e) {
 function setupEditModeToggle() {
     const editBtn = document.getElementById('edit-toggle');
     const saveBtn = document.getElementById('save-layout');
-    let gridSettingsBtn = document.getElementById('grid-settings-btn');
-    if (!gridSettingsBtn) {
-        gridSettingsBtn = document.createElement('button');
-        gridSettingsBtn.textContent = 'Grid';
-        gridSettingsBtn.className = 'edit-btn-floating';
-        gridSettingsBtn.id = 'grid-settings-btn';
-        gridSettingsBtn.onclick = openGridSettingsModal;
-        editBtn.parentNode.insertBefore(gridSettingsBtn, saveBtn);
+    const statusBarButtons = document.querySelector('.status-bar-buttons');
+    let gridSettingsInline = document.getElementById('grid-settings-inline');
+    function updateInlineSettings() {
+        if (editMode) {
+            if (!gridSettingsInline) {
+                gridSettingsInline = document.createElement('span');
+                gridSettingsInline.id = 'grid-settings-inline';
+                gridSettingsInline.style.display = 'flex';
+                gridSettingsInline.style.alignItems = 'center';
+                gridSettingsInline.style.gap = '8px';
+                gridSettingsInline.innerHTML = `
+                    <label style="color:#b0eaff;font-size:0.98em;">Rows <input id="inline-edit-rows" type="number" min="1" max="20" value="${gridData.rows}" class="inline-grid-input" /></label>
+                    <label style="color:#b0eaff;font-size:0.98em;">Cols <input id="inline-edit-cols" type="number" min="1" max="20" value="${gridData.cols}" class="inline-grid-input" /></label>
+                    <button id="inline-grid-save" style="background:#23272f;color:#00ffff;border-radius:8px;padding:2px 12px;border:none;font-weight:600;">Apply</button>
+                    <span id="inline-grid-error" style="color:#ff5c5c;font-size:0.95em;display:none;margin-left:8px;"></span>
+                `;
+                // Insert before editBtn inside statusBarButtons
+                statusBarButtons.insertBefore(gridSettingsInline, editBtn);
+                // Style the number inputs
+                const style = document.createElement('style');
+                style.innerHTML = `.inline-grid-input { background: #181a1b; color: #b0eaff; border: 1.5px solid #00ffff44; border-radius: 6px; padding: 2px 8px; font-size: 1em; width: 48px; outline: none; transition: border 0.2s; } .inline-grid-input:invalid { border-color: #ff5c5c; background: #2a1818; }`;
+                document.head.appendChild(style);
+                // Validation logic
+                function validate() {
+                    const rowsInput = document.getElementById('inline-edit-rows');
+                    const colsInput = document.getElementById('inline-edit-cols');
+                    const error = document.getElementById('inline-grid-error');
+                    let valid = true;
+                    let msg = '';
+                    const rows = parseInt(rowsInput.value, 10);
+                    const cols = parseInt(colsInput.value, 10);
+                    if (isNaN(rows) || rows < 1 || rows > 20) {
+                        valid = false;
+                        msg = 'Rows must be 1-20.';
+                        rowsInput.style.borderColor = '#ff5c5c';
+                        rowsInput.style.background = '#2a1818';
+                    } else {
+                        rowsInput.style.borderColor = '#00ffff44';
+                        rowsInput.style.background = '#181a1b';
+                    }
+                    if (isNaN(cols) || cols < 1 || cols > 20) {
+                        valid = false;
+                        msg = 'Cols must be 1-20.';
+                        colsInput.style.borderColor = '#ff5c5c';
+                        colsInput.style.background = '#2a1818';
+                    } else {
+                        colsInput.style.borderColor = '#00ffff44';
+                        colsInput.style.background = '#181a1b';
+                    }
+                    error.textContent = msg;
+                    error.style.display = valid ? 'none' : 'inline';
+                    document.getElementById('inline-grid-save').disabled = !valid;
+                    return valid;
+                }
+                document.getElementById('inline-edit-rows').addEventListener('input', validate);
+                document.getElementById('inline-edit-cols').addEventListener('input', validate);
+                document.getElementById('inline-grid-save').onclick = () => {
+                    if (!validate()) return;
+                    const newRows = parseInt(document.getElementById('inline-edit-rows').value, 10);
+                    const newCols = parseInt(document.getElementById('inline-edit-cols').value, 10);
+                    gridData.rows = newRows;
+                    gridData.cols = newCols;
+                    renderGrid(gridData);
+                    saveBtn.style.display = 'inline-block';
+                };
+                validate();
+            } else {
+                document.getElementById('inline-edit-rows').value = gridData.rows;
+                document.getElementById('inline-edit-cols').value = gridData.cols;
+                gridSettingsInline.style.display = 'flex';
+            }
+        } else if (gridSettingsInline) {
+            gridSettingsInline.style.display = 'none';
+        }
     }
-    gridSettingsBtn.classList.remove('edit-visible');
     editBtn.onclick = async () => {
         editMode = !editMode;
         editBtn.textContent = editMode ? 'Exit Edit Mode' : 'Edit Mode';
@@ -176,11 +253,7 @@ function setupEditModeToggle() {
                 availableActions = [];
             }
         }
-        if (editMode) {
-            gridSettingsBtn.classList.add('edit-visible');
-        } else {
-            gridSettingsBtn.classList.remove('edit-visible');
-        }
+        updateInlineSettings();
         renderGrid(gridData);
     };
     saveBtn.onclick = () => {
@@ -197,8 +270,7 @@ function setupEditModeToggle() {
         URL.revokeObjectURL(url);
         saveBtn.style.display = 'none';
     };
-    // Ensure grid settings button is hidden on load
-    gridSettingsBtn.classList.remove('edit-visible');
+    updateInlineSettings();
 }
 
 function setupStreamerBot() {
@@ -393,6 +465,7 @@ function openGridSettingsModal() {
     modal.innerHTML = `
         <button class="modal-close" title="Close">&times;</button>
         <div class="modal-title">Grid Settings</div>
+        <div style="font-size:0.98em;margin-bottom:8px;color:#b0eaff;">Changing rows/columns updates the grid structure. <b>To save these changes, click the Save button at the top after closing this dialog.</b></div>
         <div class="row">
             <label for="edit-rows">Rows</label>
             <input id="edit-rows" type="number" min="1" max="20" value="${gridData.rows}" style="width:60px;" />
@@ -427,18 +500,18 @@ function openGridSettingsModal() {
 function animatePolygonalMesh() {
     const svg = document.getElementById('bg-mesh');
     if (!svg) return;
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    const w = window.innerWidth * 1.12;
+    const h = window.innerHeight * 1.12;
     svg.setAttribute('width', w);
     svg.setAttribute('height', h);
     svg.innerHTML = '';
 
     // Mesh parameters
-    const rows = 7;
-    const cols = 12;
+    const rows = 13;
+    const cols = 22;
     const points = [];
     const time = Date.now() / 4000;
-    const meshRadius = 60;
+    const meshRadius = 110;
     // Generate points with slow morphing
     for (let y = 0; y <= rows; y++) {
         for (let x = 0; x <= cols; x++) {
