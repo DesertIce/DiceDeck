@@ -47,7 +47,7 @@
   margin-right: 16px;
   display: flex;
   align-items: center;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -63,18 +63,20 @@
   gap: 8px;
   flex-shrink: 0;
   overflow-x: auto;
-  max-width: 60vw;
   min-width: 0;
+  padding-right: 30px;
 }
 #save-layout, #edit-toggle, #grid-settings-btn {
   flex-shrink: 0;
   position: static !important;
   float: none !important;
-  max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+#grid-settings-btn { order: 1; }
+#save-layout { order: 2; }
+#edit-toggle { order: 3; }
 
 /* Responsive: stack buttons on very small screens */
 @media (max-width: 500px) {
@@ -540,4 +542,9 @@ body.edit-mode .empty-cell:hover {
 /* Remove extra margin from top row buttons */
 .grid-button[data-row="0"] {
   margin-top: 0;
+}
+
+#save-layout.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

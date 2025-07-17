@@ -41,6 +41,7 @@ const appState = {
     dragSrcIdx: null,
     gridBlurMin: 4,
     gridBlurMax: 12,
+    unsavedChanges: false,
 };
 
 // Utility to map action_id to action name
@@ -65,18 +66,6 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
     grid.style.gap = (gap !== undefined ? gap : 16) + 'px';
     appState.gridBlurMin = (blurMin !== undefined ? blurMin : 4);
     appState.gridBlurMax = (blurMax !== undefined ? blurMax : 12);
-
-    // Add grid settings button in edit mode
-    if (appState.editMode) {
-        let gridSettingsBtn = document.createElement('button');
-        gridSettingsBtn.id = 'grid-settings-btn';
-        gridSettingsBtn.className = 'grid-settings-fab';
-        gridSettingsBtn.title = 'Set grid rows/columns';
-        gridSettingsBtn.innerHTML = '<span class="iconify" data-icon="ic:outline-grid-on"></span>';
-        gridSettingsBtn.onclick = openGridSettingsModal;
-        grid.appendChild(gridSettingsBtn);
-        if (window.Iconify) window.Iconify.scan(gridSettingsBtn);
-    }
 
     // Create a map for quick lookup
     const btnMap = {};
@@ -148,6 +137,7 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
     if (window.Iconify) {
         window.Iconify.scan(grid);
     }
+    if (appState.editMode) setSaveButtonState();
 }
 
 let dragSrcIdx = null;
@@ -177,15 +167,17 @@ function handleDrop(e) {
                 appState.gridData.buttons[dragSrcIdx].col = appState.gridData.buttons[targetIdx].col;
                 appState.gridData.buttons[targetIdx].row = temp.row;
                 appState.gridData.buttons[targetIdx].col = temp.col;
+                appState.unsavedChanges = true;
+                setSaveButtonState();
                 renderGrid(appState.gridData);
-                document.getElementById('save-layout').style.display = 'inline-block';
             }
         } else {
             // Move to empty cell
             appState.gridData.buttons[dragSrcIdx].row = targetRow;
             appState.gridData.buttons[dragSrcIdx].col = targetCol;
+            appState.unsavedChanges = true;
+            setSaveButtonState();
             renderGrid(appState.gridData);
-            document.getElementById('save-layout').style.display = 'inline-block';
         }
     }
     dragSrcIdx = null;
@@ -267,7 +259,8 @@ function setupEditModeToggle() {
                     appState.gridData.rows = newRows;
                     appState.gridData.cols = newCols;
                     renderGrid(appState.gridData);
-                    saveBtn.style.display = 'inline-block';
+                    appState.unsavedChanges = true;
+                    setSaveButtonState();
                 };
                 validate();
             } else {
@@ -280,10 +273,20 @@ function setupEditModeToggle() {
             gridSettingsInline.style.display = 'none';
         }
     }
+    function setSaveButtonState() {
+        if (appState.editMode) {
+            saveBtn.style.display = 'inline-block';
+            saveBtn.disabled = !appState.unsavedChanges;
+            saveBtn.classList.toggle('disabled', !appState.unsavedChanges);
+        } else {
+            saveBtn.style.display = 'none';
+        }
+    }
     editBtn.onclick = async () => {
         appState.editMode = !appState.editMode;
         editBtn.textContent = appState.editMode ? 'Exit Edit Mode' : 'Edit Mode';
-        saveBtn.style.display = 'none';
+        appState.unsavedChanges = false;
+        setSaveButtonState();
         if (appState.editMode && window.sbClient && window.sbClient.getActions) {
             try {
                 const response = await window.sbClient.getActions();
@@ -319,9 +322,11 @@ function setupEditModeToggle() {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        saveBtn.style.display = 'none';
+        appState.unsavedChanges = false;
+        setSaveButtonState();
     };
     updateInlineSettings();
+    setSaveButtonState();
 }
 
 // --- Streamer.bot LAN Discovery Overlay and Logic ---
@@ -705,7 +710,8 @@ function openEditModal(idx) {
         document.body.removeChild(backdrop);
         document.body.removeChild(modal);
         renderGrid(appState.gridData);
-        document.getElementById('save-layout').style.display = 'inline-block';
+        appState.unsavedChanges = true;
+        setSaveButtonState();
     };
     // Remove handler
     modal.querySelector('.remove-btn').onclick = () => {
@@ -713,7 +719,8 @@ function openEditModal(idx) {
         document.body.removeChild(backdrop);
         document.body.removeChild(modal);
         renderGrid(appState.gridData);
-        document.getElementById('save-layout').style.display = 'inline-block';
+        appState.unsavedChanges = true;
+        setSaveButtonState();
     };
     // Cancel/close handler
     function closeModal() {
@@ -782,7 +789,8 @@ function openAddButtonModal(row, col) {
         document.body.removeChild(backdrop);
         document.body.removeChild(modal);
         renderGrid(appState.gridData);
-        document.getElementById('save-layout').style.display = 'inline-block';
+        appState.unsavedChanges = true;
+        setSaveButtonState();
     };
     // Cancel/close handler
     function closeModal() {
@@ -841,7 +849,8 @@ function openGridSettingsModal() {
         document.body.removeChild(backdrop);
         document.body.removeChild(modal);
         renderGrid(appState.gridData);
-        document.getElementById('save-layout').style.display = 'inline-block';
+        appState.unsavedChanges = true;
+        setSaveButtonState();
     };
     function closeModal() {
         document.body.removeChild(backdrop);
@@ -1027,6 +1036,34 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
     animatePolygonalMesh();
     animateGridBlur();
+    // Add grid settings floating button if not present
+    let gridSettingsBtn = document.getElementById('grid-settings-btn');
+    if (!gridSettingsBtn) {
+        gridSettingsBtn = document.createElement('button');
+        gridSettingsBtn.id = 'grid-settings-btn';
+        gridSettingsBtn.className = 'grid-settings-fab';
+        gridSettingsBtn.title = 'Set grid rows/columns';
+        gridSettingsBtn.innerHTML = '<span class="iconify" data-icon="ic:outline-grid-on"></span>';
+        gridSettingsBtn.onclick = openGridSettingsModal;
+        gridSettingsBtn.style.position = 'absolute';
+        gridSettingsBtn.style.top = '36px';
+        gridSettingsBtn.style.left = '36px';
+        gridSettingsBtn.style.zIndex = '10';
+        gridSettingsBtn.style.display = 'none';
+        document.body.appendChild(gridSettingsBtn);
+    }
+    // Toggle visibility based on edit mode
+    function updateGridSettingsBtn() {
+        gridSettingsBtn.style.display = appState.editMode ? 'none' : '';
+    }
+    // Hook into edit mode toggle
+    const origEditBtnHandler = document.getElementById('edit-toggle').onclick;
+    document.getElementById('edit-toggle').onclick = function(...args) {
+        if (typeof origEditBtnHandler === 'function') origEditBtnHandler.apply(this, args);
+        updateGridSettingsBtn();
+    };
+    // Also update on load
+    updateGridSettingsBtn();
 });
 
 // Debug Import Button and Modal Logic
@@ -1161,12 +1198,74 @@ if (getQueryParam('import') === null) {
 
 // Function to import layout from JSON (array of {action_id, title})
 function importLayout(layoutArray) {
-    // Replace current gridData.buttons with imported layout
     if (!appState.gridData) return;
-    // Keep grid size, replace buttons
-    appState.gridData.buttons = layoutArray.map(sanitizeButton);
+    // Normalize button positions
+    const normalized = normalizeButtons(layoutArray.map(sanitizeButton));
+    appState.gridData.buttons = normalized;
+    // Update grid size to fit normalized buttons
+    if (normalized.length > 0) {
+        appState.gridData.rows = Math.max(...normalized.map(b => b.row)) + 1;
+        appState.gridData.cols = Math.max(...normalized.map(b => b.col)) + 1;
+    }
     renderGrid(appState.gridData);
-    document.getElementById('save-layout').style.display = 'inline-block';
+    checkGridGaps(appState.gridData.buttons, appState.gridData.rows, appState.gridData.cols);
+    appState.unsavedChanges = true;
+    setSaveButtonState();
+}
+
+// Utility: Normalize button positions so min row/col is 0, and fill from top-left
+function normalizeButtons(buttons) {
+    if (!Array.isArray(buttons) || buttons.length === 0) return buttons;
+    // Find min row/col
+    let minRow = Math.min(...buttons.map(b => b.row));
+    let minCol = Math.min(...buttons.map(b => b.col));
+    // Shift all buttons so min row/col is 0
+    if (minRow !== 0 || minCol !== 0) {
+        buttons.forEach(b => {
+            b.row -= minRow;
+            b.col -= minCol;
+        });
+    }
+    return buttons;
+}
+// Utility: Check for gaps in first row/col and show a warning
+function checkGridGaps(buttons, rows, cols) {
+    let firstRowEmpty = true, firstColEmpty = true;
+    for (let c = 0; c < cols; c++) {
+        if (buttons.some(b => b.row === 0 && b.col === c)) {
+            firstRowEmpty = false;
+            break;
+        }
+    }
+    for (let r = 0; r < rows; r++) {
+        if (buttons.some(b => b.col === 0 && b.row === r)) {
+            firstColEmpty = false;
+            break;
+        }
+    }
+    let warn = document.getElementById('grid-gap-warning');
+    if (!warn) {
+        warn = document.createElement('div');
+        warn.id = 'grid-gap-warning';
+        warn.style.position = 'fixed';
+        warn.style.bottom = '16px';
+        warn.style.left = '50%';
+        warn.style.transform = 'translateX(-50%)';
+        warn.style.background = '#ff5c5c';
+        warn.style.color = '#fff';
+        warn.style.padding = '8px 18px';
+        warn.style.borderRadius = '8px';
+        warn.style.fontWeight = 'bold';
+        warn.style.zIndex = 9999;
+        warn.style.boxShadow = '0 2px 8px #0008';
+        document.body.appendChild(warn);
+    }
+    if (firstRowEmpty || firstColEmpty) {
+        warn.textContent = 'Warning: The entire first row or column of your grid is empty.';
+        warn.style.display = 'block';
+    } else {
+        warn.style.display = 'none';
+    }
 }
 
 // Utility: sanitize string for DOM insertion (basic)
