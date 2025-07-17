@@ -58,7 +58,6 @@ function getActionIdByName(action_name) {
 }
 
 function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
-    console.log(`[renderGrid] cols: ${cols}, rows: ${rows}, editMode: ${appState.editMode}`);
     const grid = document.getElementById('grid-container');
     grid.innerHTML = '';
     // Set CSS variables for grid sizing
@@ -422,6 +421,13 @@ function hideDiscoveryOverlay() {
     if (overlay) overlay.remove();
 }
 
+// Utility to determine WebSocket protocol
+function getWebSocketProtocol() {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('ws') === '1') return 'ws';
+    return window.location.protocol === 'https:' ? 'wss' : 'ws';
+}
+
 // Use StreamerbotClient for handshake/info
 async function tryStreamerbotClientConnect(host, port, timeout = 2000) {
     return new Promise((resolve, reject) => {
@@ -438,6 +444,7 @@ async function tryStreamerbotClientConnect(host, port, timeout = 2000) {
             client = new window.StreamerbotClient({
                 host,
                 port,
+                useSecure: getWebSocketProtocol() === 'wss',
                 onConnect: async (info) => {
                     clearTimeout(timer);
                     if (!resolved) {
@@ -1368,3 +1375,24 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
     }
 });
+
+// Show insecure WebSocket warning if needed
+if (window.location.protocol === 'https:' && getWebSocketProtocol() === 'ws') {
+    const warning = document.createElement('div');
+    warning.id = 'ws-warning';
+    warning.style.position = 'fixed';
+    warning.style.top = '0';
+    warning.style.left = '0';
+    warning.style.width = '100vw';
+    warning.style.zIndex = '9999';
+    warning.style.background = '#ffcc00';
+    warning.style.color = '#222';
+    warning.style.fontWeight = 'bold';
+    warning.style.textAlign = 'center';
+    warning.style.padding = '10px 0';
+    warning.style.boxShadow = '0 2px 8px #0003';
+    warning.innerHTML =
+        '⚠️ You are using an insecure WebSocket connection (<code>ws://</code>) on a secure page (<code>https://</code>). ' +
+        '<button style="margin-left:16px;" onclick="this.parentNode.style.display=\'none\'">Dismiss</button>';
+    document.body.appendChild(warning);
+}
