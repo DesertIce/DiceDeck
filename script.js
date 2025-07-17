@@ -58,6 +58,7 @@ function getActionIdByName(action_name) {
 }
 
 function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
+    console.log(`[renderGrid] cols: ${cols}, rows: ${rows}, editMode: ${appState.editMode}`);
     const grid = document.getElementById('grid-container');
     grid.innerHTML = '';
     // Set CSS variables for grid sizing
@@ -118,26 +119,63 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
                     };
                     el.ontouchend = el.onclick;
                 }
+                // Debug overlay
+                if (gridDebugOverlay) {
+                    el.style.border = '2px solid red';
+                    el.style.position = 'relative';
+                    const label = document.createElement('span');
+                    label.textContent = `[${r},${c}]`;
+                    label.style.position = 'absolute';
+                    label.style.top = '2px';
+                    label.style.left = '4px';
+                    label.style.fontSize = '0.8em';
+                    label.style.color = 'red';
+                    label.style.background = 'rgba(0,0,0,0.3)';
+                    label.style.padding = '0 2px';
+                    label.style.borderRadius = '3px';
+                    el.appendChild(label);
+                } else {
+                    el.style.border = '';
+                }
                 grid.appendChild(el);
-            } else if (appState.editMode) {
-                // In edit mode, show faded outline for empty cells
+            } else {
+                // Always render empty cells
                 const empty = document.createElement('div');
-                empty.className = 'empty-cell';
+                empty.className = 'empty-cell' + (appState.editMode ? '' : ' hidden-cell');
                 empty.dataset.row = r;
                 empty.dataset.col = c;
-                empty.onclick = () => openAddButtonModal(r, c);
-                empty.ondragover = handleDragOver;
-                empty.ondrop = handleDrop;
-                empty.ondragleave = handleDragLeave;
+                if (appState.editMode) {
+                    empty.onclick = () => openAddButtonModal(r, c);
+                    empty.ondragover = handleDragOver;
+                    empty.ondrop = handleDrop;
+                    empty.ondragleave = handleDragLeave;
+                }
+                // Debug overlay
+                if (gridDebugOverlay) {
+                    empty.style.border = '2px solid red';
+                    empty.style.position = 'relative';
+                    const label = document.createElement('span');
+                    label.textContent = `[${r},${c}]`;
+                    label.style.position = 'absolute';
+                    label.style.top = '2px';
+                    label.style.left = '4px';
+                    label.style.fontSize = '0.8em';
+                    label.style.color = 'red';
+                    label.style.background = 'rgba(0,0,0,0.3)';
+                    label.style.padding = '0 2px';
+                    label.style.borderRadius = '3px';
+                    empty.appendChild(label);
+                } else {
+                    empty.style.border = '';
+                }
                 grid.appendChild(empty);
             }
-            // In normal mode, do not render anything for empty cells
         }
     }
     if (window.Iconify) {
         window.Iconify.scan(grid);
     }
-    if (appState.editMode) setSaveButtonState();
+    setSaveButtonState();
 }
 
 let dragSrcIdx = null;
@@ -273,15 +311,6 @@ function setupEditModeToggle() {
             gridSettingsInline.style.display = 'none';
         }
     }
-    function setSaveButtonState() {
-        if (appState.editMode) {
-            saveBtn.style.display = 'inline-block';
-            saveBtn.disabled = !appState.unsavedChanges;
-            saveBtn.classList.toggle('disabled', !appState.unsavedChanges);
-        } else {
-            saveBtn.style.display = 'none';
-        }
-    }
     editBtn.onclick = async () => {
         appState.editMode = !appState.editMode;
         editBtn.textContent = appState.editMode ? 'Exit Edit Mode' : 'Edit Mode';
@@ -327,6 +356,19 @@ function setupEditModeToggle() {
     };
     updateInlineSettings();
     setSaveButtonState();
+}
+
+// Move setSaveButtonState to top level
+function setSaveButtonState() {
+    const saveBtn = document.getElementById('save-layout');
+    if (!saveBtn) return;
+    if (appState.editMode) {
+        saveBtn.style.display = 'inline-block';
+        saveBtn.disabled = !appState.unsavedChanges;
+        saveBtn.classList.toggle('disabled', !appState.unsavedChanges);
+    } else {
+        saveBtn.style.display = 'none';
+    }
 }
 
 // --- Streamer.bot LAN Discovery Overlay and Logic ---
@@ -1200,13 +1242,30 @@ if (getQueryParam('import') === null) {
 function importLayout(layoutArray) {
     if (!appState.gridData) return;
     // Normalize button positions
-    const normalized = normalizeButtons(layoutArray.map(sanitizeButton));
-    appState.gridData.buttons = normalized;
-    // Update grid size to fit normalized buttons
+    let normalized = normalizeButtons(layoutArray.map(sanitizeButton));
+    // Compact: remove empty trailing columns and rows
     if (normalized.length > 0) {
-        appState.gridData.rows = Math.max(...normalized.map(b => b.row)) + 1;
-        appState.gridData.cols = Math.max(...normalized.map(b => b.col)) + 1;
+        // Find used rows and columns
+        const usedRows = new Set(normalized.map(b => b.row));
+        const usedCols = new Set(normalized.map(b => b.col));
+        // Find max used row/col
+        const maxRow = Math.max(...usedRows);
+        const maxCol = Math.max(...usedCols);
+        // Remove buttons outside compacted bounds (shouldn't happen, but safe)
+        normalized = normalized.filter(b => b.row <= maxRow && b.col <= maxCol);
+        // Remap rows/cols to compact (no gaps)
+        const sortedRows = Array.from(usedRows).sort((a, b) => a - b);
+        const sortedCols = Array.from(usedCols).sort((a, b) => a - b);
+        const rowMap = new Map(sortedRows.map((val, idx) => [val, idx]));
+        const colMap = new Map(sortedCols.map((val, idx) => [val, idx]));
+        normalized.forEach(b => {
+            b.row = rowMap.get(b.row);
+            b.col = colMap.get(b.col);
+        });
+        appState.gridData.rows = sortedRows.length;
+        appState.gridData.cols = sortedCols.length;
     }
+    appState.gridData.buttons = normalized;
     renderGrid(appState.gridData);
     checkGridGaps(appState.gridData.buttons, appState.gridData.rows, appState.gridData.cols);
     appState.unsavedChanges = true;
@@ -1286,3 +1345,13 @@ function sanitizeButton(btn) {
         action_id: sanitizeString(btn.action_id || ''),
     };
 }
+
+// Debug overlay toggle
+let gridDebugOverlay = false;
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'F12') {
+        gridDebugOverlay = !gridDebugOverlay;
+        renderGrid(appState.gridData);
+        e.preventDefault();
+    }
+});

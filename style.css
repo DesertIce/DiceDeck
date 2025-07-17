@@ -538,6 +538,10 @@ body.edit-mode .empty-cell:hover {
   background: rgba(0,255,255,0.08);
   cursor: pointer;
 }
+.hidden-cell {
+  visibility: hidden;
+  pointer-events: none;
+}
 
 /* Remove extra margin from top row buttons */
 .grid-button[data-row="0"] {
