@@ -12,12 +12,13 @@
   position: fixed;
   top: 0;
   left: 0;
-  z-index: 10;
+  z-index: 100;
   box-shadow: 0 2px 12px 0 rgba(0,0,0,0.12);
   border-bottom: 1px solid rgba(80,80,80,0.18);
   backdrop-filter: blur(8px);
   padding: 0 8px;
   gap: 8px;
+  overflow: visible;
 }
 
 #status-indicator {
@@ -53,11 +54,36 @@
   white-space: nowrap;
 }
 
+/* Improved status bar button alignment */
 .status-bar-buttons {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   margin-left: auto;
-  gap: 6px;
+  gap: 8px;
+  flex-shrink: 0;
+  overflow-x: auto;
+  max-width: 60vw;
+  min-width: 0;
+}
+#save-layout, #edit-toggle, #grid-settings-btn {
+  flex-shrink: 0;
+  position: static !important;
+  float: none !important;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Responsive: stack buttons on very small screens */
+@media (max-width: 500px) {
+  .status-bar-buttons {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    max-width: 90vw;
+  }
 }
 
 #edit-toggle, #save-layout {
@@ -78,18 +104,21 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  margin-left: 18px;
+  margin-left: 0;
+  margin-right: 0;
   font-family: inherit;
 }
 #edit-toggle.edit-btn-floating, #save-layout.edit-btn-floating {
   margin-left: 32px;
 }
 #edit-toggle:hover, #save-layout:hover {
-  background: rgba(80,80,80,0.9);
+  background: rgba(80,80,80,0.95);
   color: #fff;
+  box-shadow: 0 0 8px 2px #00ffff99, 0 2px 8px 0 rgba(0,0,0,0.10);
+  z-index: 2;
 }
 #edit-toggle {
-  margin-right: 16px;
+  margin-right: 0;
 }
 
 #grid-settings-btn {
@@ -110,8 +139,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  margin-left: 6px;
-  margin-right: 18px;
+  margin-left: 0;
+  margin-right: 0;
   font-family: inherit;
   visibility: hidden;
 }
@@ -119,8 +148,10 @@
   visibility: visible;
 }
 #grid-settings-btn:hover {
-  background: rgba(80,80,80,0.9);
+  background: rgba(80,80,80,0.95);
   color: #fff;
+  box-shadow: 0 0 8px 2px #00ffff99, 0 2px 8px 0 rgba(0,0,0,0.10);
+  z-index: 2;
 }
 
 body, html {
@@ -130,6 +161,37 @@ body, html {
   padding: 0;
   overflow: hidden;
   background: #181a1b;
+}
+
+/* Animation disabling for noanim query param */
+body.no-anim *, body.no-anim *:before, body.no-anim *:after {
+  transition: none !important;
+  animation: none !important;
+  box-shadow: none !important;
+}
+body.no-anim #bg-mesh,
+body.no-anim #grid-container,
+body.no-anim .glass-panel {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+body.no-anim .grid-button,
+body.no-anim #edit-toggle,
+body.no-anim #save-layout,
+body.no-anim #grid-settings-btn,
+body.no-anim #debugImportBtn {
+  transition: none !important;
+  box-shadow: none !important;
+}
+/* Keep only press/click feedback */
+body.no-anim .grid-button:active,
+body.no-anim .grid-button:focus-visible,
+body.no-anim #edit-toggle:active,
+body.no-anim #save-layout:active,
+body.no-anim #grid-settings-btn:active,
+body.no-anim #debugImportBtn:active {
+  filter: brightness(0.85);
+  outline: 2px solid #00ffff;
 }
 
 .glass-panel {
@@ -172,15 +234,14 @@ body, html {
 }
 #grid-container {
   display: grid;
-  gap: 32px;
   width: 100vw;
   height: calc(100vh - 32px);
   margin-top: 32px;
-  padding-top: 8px;
-  padding-left: 8px;
-  padding-right: 8px;
+  padding: 30px 20px 20px 20px;
   align-items: center;
   justify-items: center;
+  justify-content: center;
+  align-content: center;
   background: rgba(30, 32, 40, 0.025);
   backdrop-filter: blur(42px) saturate(1.38);
   -webkit-backdrop-filter: blur(42px) saturate(1.38);
@@ -188,42 +249,16 @@ body, html {
   box-shadow: 0 8px 32px 0 rgba(0,0,0,0.18), 0 0 32px 0 rgba(255,255,255,0.10) inset;
   position: relative;
   border-radius: 0;
+  gap: 16px; /* Fixed gap */
+  grid-template-rows: repeat(var(--grid-rows, 8), 1fr);
+  grid-template-columns: repeat(var(--grid-cols, 10), 1fr);
 }
 
-.grid-settings-fab {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  z-index: 10;
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #23272f 80%, #00ffff44 100%);
-  color: #00ffff;
-  border: none;
-  box-shadow: 0 4px 16px 0 rgba(0,0,0,0.25);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 2rem;
-  cursor: pointer;
-  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
-  outline: none;
-}
-.grid-settings-fab:hover {
-  background: linear-gradient(135deg, #23272f 60%, #00ffff88 100%);
-  color: #fff;
-  box-shadow: 0 6px 24px 0 rgba(0,255,255,0.18);
-}
-
-/* Button styles */
 .grid-button {
-  min-width: 0;
-  min-height: 0;
   width: 100%;
   height: 100%;
-  aspect-ratio: 1 / 1;
-  font-size: 1.7vw;
+  margin: 0;
+  font-size: clamp(0.7vw, 2.5vw, 1.2em); /* Responsive font size */
   background: #23272fbb;
   color: #b0b0b0;
   border: none;
@@ -242,10 +277,14 @@ body, html {
   font-family: inherit;
   font-weight: 600;
   outline: none;
-  padding: 14px 8px 10px 8px;
-  max-width: 180px;
-  max-height: 180px;
-  margin: 2px;
+  padding: clamp(4px, 2vw, 18px); /* Responsive padding */
+  overflow: hidden;
+}
+.grid-button:hover, .grid-button:focus-visible {
+  box-shadow: 0 0 12px 3px #00ffff99, 0 2px 8px 0 rgba(0,0,0,0.10);
+  background: #23272fff;
+  z-index: 2;
+  outline: none;
 }
 .grid-button:active {
   background: #3a3f4b;
@@ -267,11 +306,13 @@ body, html {
   pointer-events: none;
 }
 .grid-button .button-title {
-  font-size: 0.95em;
-  font-weight: 600;
-  line-height: 1.1;
+  font-size: 1em;
+  line-height: 1.2;
   word-break: break-word;
-  pointer-events: none;
+  overflow-wrap: anywhere;
+  text-align: center;
+  max-width: 90%;
+  margin: 0 auto;
 }
 
 .edit-modal {
@@ -384,4 +425,119 @@ body, html {
 }
 .edit-modal .remove-btn:hover {
   background: #d44a4a;
+}
+
+/* StreamerBot Discovery Overlay */
+#sb-discovery-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(10, 10, 20, 0.92);
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 1.25rem;
+  font-family: inherit;
+  transition: opacity 0.3s;
+}
+#sb-discovery-overlay .sb-discovery-box {
+  background: #23272f;
+  border-radius: 18px;
+  box-shadow: 0 8px 32px rgba(0,255,255,0.18);
+  padding: 36px 32px 28px 32px;
+  min-width: 340px;
+  max-width: 96vw;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  border: 2px solid #00ffff88;
+}
+#sb-discovery-overlay .sb-discovery-progress {
+  width: 100%;
+  background: #181a1b;
+  border-radius: 8px;
+  margin: 12px 0 0 0;
+  height: 18px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0,255,255,0.10) inset;
+}
+#sb-discovery-overlay .sb-discovery-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #00ffff 0%, #3ec46d 100%);
+  transition: width 0.2s;
+}
+#sb-discovery-overlay .sb-discovery-btns {
+  display: flex;
+  gap: 18px;
+  margin-top: 18px;
+}
+#sb-discovery-overlay button {
+  background: #00ffff;
+  color: #23272f;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 28px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+#sb-discovery-overlay button:hover {
+  background: #3ec46d;
+  color: #fff;
+}
+
+/* Debug Import Button Styling */
+#debugImportBtn {
+  background: linear-gradient(135deg, #23272f 80%, #00ffff44 100%);
+  color: #00ffff;
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px 0 rgba(0,0,0,0.25);
+  font-size: 1.1rem;
+  font-weight: 600;
+  padding: 10px 22px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+  outline: none;
+  letter-spacing: 0.03em;
+}
+#debugImportBtn:hover {
+  background: linear-gradient(135deg, #23272f 60%, #00ffff88 100%);
+  color: #fff;
+  box-shadow: 0 6px 24px 0 rgba(0,255,255,0.18);
+}
+
+.empty-cell {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  /* Invisible in normal mode */
+  background: none;
+  border: none;
+  pointer-events: auto;
+}
+body.edit-mode .empty-cell {
+  border: 2px dashed #00ffff44;
+  border-radius: 24px;
+  background: rgba(0,255,255,0.03);
+  transition: border 0.2s, background 0.2s;
+  min-width: 24px;
+  min-height: 24px;
+}
+body.edit-mode .empty-cell:hover {
+  border-color: #00ffff99;
+  background: rgba(0,255,255,0.08);
+  cursor: pointer;
+}
+
+/* Remove extra margin from top row buttons */
+.grid-button[data-row="0"] {
+  margin-top: 0;
 }
