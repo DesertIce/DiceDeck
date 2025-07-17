@@ -1,16 +1,21 @@
 // Utility to fetch JSON data
 async function fetchGridData() {
-    const res = await fetch('data.json');
-    const data = await res.json();
-    // Patch: convert legacy action name to action_id if possible
-    if (Array.isArray(data.buttons)) {
-        data.buttons.forEach(btn => {
-            if (!btn.action_id && btn.action) {
-                btn.action_id = getActionIdByName(btn.action);
-            }
-        });
+    try {
+        const res = await fetch('data.json');
+        const data = await res.json();
+        // Patch: convert legacy action name to action_id if possible
+        if (Array.isArray(data.buttons)) {
+            data.buttons.forEach(btn => {
+                if (!btn.action_id && btn.action) {
+                    btn.action_id = getActionIdByName(btn.action);
+                }
+            });
+        }
+        return data;
+    } catch (e) {
+        console.error('Error fetching grid data:', e);
+        throw e;
     }
-    return data;
 }
 
 // Status bar update
@@ -28,20 +33,26 @@ function SetConnectionStatus(connected) {
     }
 }
 
-let gridData = null;
-let editMode = false;
-let availableActions = [];
+// Refactored: Encapsulate app state in a single object
+const appState = {
+    gridData: null,
+    editMode: false,
+    availableActions: [],
+    dragSrcIdx: null,
+    gridBlurMin: 4,
+    gridBlurMax: 12,
+};
 
 // Utility to map action_id to action name
 function getActionNameById(action_id) {
-    if (!availableActions || !Array.isArray(availableActions)) return '';
-    const found = availableActions.find(a => a.id === action_id);
+    if (!appState.availableActions || !Array.isArray(appState.availableActions)) return '';
+    const found = appState.availableActions.find(a => a.id === action_id);
     return found ? found.name : '';
 }
 // Utility to map action name to action_id
 function getActionIdByName(action_name) {
-    if (!availableActions || !Array.isArray(availableActions)) return '';
-    const found = availableActions.find(a => a.name === action_name);
+    if (!appState.availableActions || !Array.isArray(appState.availableActions)) return '';
+    const found = appState.availableActions.find(a => a.name === action_name);
     return found ? found.id : '';
 }
 
@@ -52,11 +63,11 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
     grid.style.setProperty('--grid-rows', rows);
     grid.style.setProperty('--grid-cols', cols);
     grid.style.gap = (gap !== undefined ? gap : 16) + 'px';
-    gridBlurMin = (blurMin !== undefined ? blurMin : 4);
-    gridBlurMax = (blurMax !== undefined ? blurMax : 12);
+    appState.gridBlurMin = (blurMin !== undefined ? blurMin : 4);
+    appState.gridBlurMax = (blurMax !== undefined ? blurMax : 12);
 
     // Add grid settings button in edit mode
-    if (editMode) {
+    if (appState.editMode) {
         let gridSettingsBtn = document.createElement('button');
         gridSettingsBtn.id = 'grid-settings-btn';
         gridSettingsBtn.className = 'grid-settings-fab';
@@ -82,12 +93,13 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
                 el.dataset.row = r;
                 el.dataset.col = c;
                 el.dataset.idx = btn.idx;
+                // In renderGrid, sanitize all user-provided content before inserting into innerHTML
                 el.innerHTML = '';
                 if (btn.icon) {
-                    el.innerHTML += `<span class="button-icon iconify" data-icon="${btn.icon}"></span>`;
+                    el.innerHTML += `<span class="button-icon iconify" data-icon="${sanitizeString(btn.icon)}"></span>`;
                 }
-                el.innerHTML += `<span class="button-title">${btn.title}</span>`;
-                if (editMode) {
+                el.innerHTML += `<span class="button-title">${sanitizeString(btn.title)}</span>`;
+                if (appState.editMode) {
                     el.setAttribute('draggable', 'true');
                     el.ondragstart = handleDragStart;
                     el.ondragover = handleDragOver;
@@ -118,7 +130,7 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
                     el.ontouchend = el.onclick;
                 }
                 grid.appendChild(el);
-            } else if (editMode) {
+            } else if (appState.editMode) {
                 // In edit mode, show faded outline for empty cells
                 const empty = document.createElement('div');
                 empty.className = 'empty-cell';
@@ -160,19 +172,19 @@ function handleDrop(e) {
         if (typeof targetIdx !== 'undefined') {
             // Swap with another button
             if (dragSrcIdx !== targetIdx) {
-                const temp = { ...gridData.buttons[dragSrcIdx] };
-                gridData.buttons[dragSrcIdx].row = gridData.buttons[targetIdx].row;
-                gridData.buttons[dragSrcIdx].col = gridData.buttons[targetIdx].col;
-                gridData.buttons[targetIdx].row = temp.row;
-                gridData.buttons[targetIdx].col = temp.col;
-                renderGrid(gridData);
+                const temp = { ...appState.gridData.buttons[dragSrcIdx] };
+                appState.gridData.buttons[dragSrcIdx].row = appState.gridData.buttons[targetIdx].row;
+                appState.gridData.buttons[dragSrcIdx].col = appState.gridData.buttons[targetIdx].col;
+                appState.gridData.buttons[targetIdx].row = temp.row;
+                appState.gridData.buttons[targetIdx].col = temp.col;
+                renderGrid(appState.gridData);
                 document.getElementById('save-layout').style.display = 'inline-block';
             }
         } else {
             // Move to empty cell
-            gridData.buttons[dragSrcIdx].row = targetRow;
-            gridData.buttons[dragSrcIdx].col = targetCol;
-            renderGrid(gridData);
+            appState.gridData.buttons[dragSrcIdx].row = targetRow;
+            appState.gridData.buttons[dragSrcIdx].col = targetCol;
+            renderGrid(appState.gridData);
             document.getElementById('save-layout').style.display = 'inline-block';
         }
     }
@@ -194,7 +206,7 @@ function setupEditModeToggle() {
     const statusBarButtons = document.querySelector('.status-bar-buttons');
     let gridSettingsInline = document.getElementById('grid-settings-inline');
     function updateInlineSettings() {
-        if (editMode) {
+        if (appState.editMode) {
             document.body.classList.add('edit-mode');
             if (!gridSettingsInline) {
                 gridSettingsInline = document.createElement('span');
@@ -203,8 +215,8 @@ function setupEditModeToggle() {
                 gridSettingsInline.style.alignItems = 'center';
                 gridSettingsInline.style.gap = '8px';
                 gridSettingsInline.innerHTML = `
-                    <label style="color:#b0eaff;font-size:0.98em;">Rows <input id="inline-edit-rows" type="number" min="1" max="20" value="${gridData.rows}" class="inline-grid-input" /></label>
-                    <label style="color:#b0eaff;font-size:0.98em;">Cols <input id="inline-edit-cols" type="number" min="1" max="20" value="${gridData.cols}" class="inline-grid-input" /></label>
+                    <label style="color:#b0eaff;font-size:0.98em;">Rows <input id="inline-edit-rows" type="number" min="1" max="20" value="${appState.gridData.rows}" class="inline-grid-input" /></label>
+                    <label style="color:#b0eaff;font-size:0.98em;">Cols <input id="inline-edit-cols" type="number" min="1" max="20" value="${appState.gridData.cols}" class="inline-grid-input" /></label>
                     <button id="inline-grid-save" style="background:#23272f;color:#00ffff;border-radius:8px;padding:2px 12px;border:none;font-weight:600;">Apply</button>
                     <span id="inline-grid-error" style="color:#ff5c5c;font-size:0.95em;display:none;margin-left:8px;"></span>
                 `;
@@ -252,15 +264,15 @@ function setupEditModeToggle() {
                     if (!validate()) return;
                     const newRows = parseInt(document.getElementById('inline-edit-rows').value, 10);
                     const newCols = parseInt(document.getElementById('inline-edit-cols').value, 10);
-                    gridData.rows = newRows;
-                    gridData.cols = newCols;
-                    renderGrid(gridData);
+                    appState.gridData.rows = newRows;
+                    appState.gridData.cols = newCols;
+                    renderGrid(appState.gridData);
                     saveBtn.style.display = 'inline-block';
                 };
                 validate();
             } else {
-                document.getElementById('inline-edit-rows').value = gridData.rows;
-                document.getElementById('inline-edit-cols').value = gridData.cols;
+                document.getElementById('inline-edit-rows').value = appState.gridData.rows;
+                document.getElementById('inline-edit-cols').value = appState.gridData.cols;
                 gridSettingsInline.style.display = 'flex';
             }
         } else if (gridSettingsInline) {
@@ -269,27 +281,27 @@ function setupEditModeToggle() {
         }
     }
     editBtn.onclick = async () => {
-        editMode = !editMode;
-        editBtn.textContent = editMode ? 'Exit Edit Mode' : 'Edit Mode';
+        appState.editMode = !appState.editMode;
+        editBtn.textContent = appState.editMode ? 'Exit Edit Mode' : 'Edit Mode';
         saveBtn.style.display = 'none';
-        if (editMode && window.sbClient && window.sbClient.getActions) {
+        if (appState.editMode && window.sbClient && window.sbClient.getActions) {
             try {
                 const response = await window.sbClient.getActions();
                 if (response && response.status === 'ok' && Array.isArray(response.actions)) {
-                    availableActions = response.actions;
+                    appState.availableActions = response.actions;
                 }
             } catch (e) {
-                availableActions = [];
+                appState.availableActions = [];
             }
         }
         updateInlineSettings();
-        renderGrid(gridData);
+        renderGrid(appState.gridData);
     };
     saveBtn.onclick = () => {
         // Download the new layout as data.json
         const exportData = {
-            ...gridData,
-            buttons: gridData.buttons.map(btn => ({
+            ...appState.gridData,
+            buttons: appState.gridData.buttons.map(btn => ({
                 row: btn.row,
                 col: btn.col,
                 title: btn.title,
@@ -479,10 +491,8 @@ async function discoverStreamerBotOnLAN() {
             hosts.push(`${subnet}.${i}`);
         }
     }
-    // Add 78 dummy (but valid) IPs for the lulz (using 192.0.2.x TEST-NET-1)
-    for (let i = 1; i <= 78; i++) {
-        hosts.push(`192.0.2.${i}`);
-    }
+    // Remove all test/dummy IPs from LAN scan logic
+    // Remove: for (let i = 1; i <= 78; i++) { hosts.push(`192.0.2.${i}`); }
     // Split hosts into chunks for workers
     const chunkSize = Math.ceil(hosts.length / SB_DISCOVERY_WORKER_COUNT);
     let found = false;
@@ -494,7 +504,7 @@ async function discoverStreamerBotOnLAN() {
         workers.forEach(w => w.terminate());
         workers = [];
     }
-    const discoveryNote = '<br><small style="color:#aaa">Note: You may see many connection errors in your browser console during scanning. This is normal and expected.<br><br>Tip: Discovery is only needed if the server IP address changes or is lost. If you already know the IP and port of your Streamer.bot server, you can skip scanning by adding them to the URL as query parameters.<br>For example: <code>?address=192.168.1.100&port=8080</code></small>';
+    const discoveryNote = '<br><small style="color:#aaa">Note: You may see many connection errors in your browser console during scanning. This is normal and expected.<br><br>Tip: Discovery is only needed if the server IP address changes or is lost. If you already know the IP and port of your Streamer.bot server, you can skip scanning by adding them to the URL as query parameters.<br>For example: <code>?address=192.168.1.100&port=8080</code> or <code>?host=streamerbot.local</code> (host can be a hostname, mDNS, or DNS name).</small>';
     showDiscoveryOverlay('Scanning LAN for Streamer.bot...' + discoveryNote, 0);
     const workerDelay = 200; // ms delay between worker spawns
     for (let w = 0; w < SB_DISCOVERY_WORKER_COUNT; w++) {
@@ -596,10 +606,10 @@ function setupStreamerBot(address, port) {
                 try {
                     const response = await client.getActions();
                     if (response && response.status === 'ok' && Array.isArray(response.actions)) {
-                        availableActions = response.actions;
+                        appState.availableActions = response.actions;
                     }
                 } catch (e) {
-                    availableActions = [];
+                    appState.availableActions = [];
                 }
             }
             // Confirm instanceId if previously stored
@@ -643,7 +653,7 @@ function setupStreamerBot(address, port) {
 }
 
 function openEditModal(idx) {
-    const btn = gridData.buttons[idx];
+    const btn = appState.gridData.buttons[idx];
     // Modal backdrop
     const backdrop = document.createElement('div');
     backdrop.className = 'edit-modal-backdrop';
@@ -654,9 +664,9 @@ function openEditModal(idx) {
         <button class="modal-close" title="Close">&times;</button>
         <div class="modal-title">Edit Button</div>
         <label for="edit-title">Title</label>
-        <input id="edit-title" type="text" value="${btn.title}" />
+        <input id="edit-title" type="text" value="${sanitizeString(btn.title)}" />
         <label for="edit-icon">Icon Name (e.g. ic:outline-question-mark)</label>
-        <input id="edit-icon" type="text" value="${btn.icon || ''}" placeholder="Optional iconify name" />
+        <input id="edit-icon" type="text" value="${sanitizeString(btn.icon || '')}" placeholder="Optional iconify name" />
         <label for="edit-action">Action</label>
         <select id="edit-action"></select>
         <div class="add-remove-btns">
@@ -669,8 +679,8 @@ function openEditModal(idx) {
     `;
     // Populate actions
     const actionSelect = modal.querySelector('#edit-action');
-    if (availableActions && availableActions.length > 0) {
-        availableActions.forEach(a => {
+    if (appState.availableActions && appState.availableActions.length > 0) {
+        appState.availableActions.forEach(a => {
             const opt = document.createElement('option');
             opt.value = a.id;
             opt.textContent = a.name;
@@ -694,15 +704,15 @@ function openEditModal(idx) {
         delete btn.action;
         document.body.removeChild(backdrop);
         document.body.removeChild(modal);
-        renderGrid(gridData);
+        renderGrid(appState.gridData);
         document.getElementById('save-layout').style.display = 'inline-block';
     };
     // Remove handler
     modal.querySelector('.remove-btn').onclick = () => {
-        gridData.buttons.splice(idx, 1);
+        appState.gridData.buttons.splice(idx, 1);
         document.body.removeChild(backdrop);
         document.body.removeChild(modal);
-        renderGrid(gridData);
+        renderGrid(appState.gridData);
         document.getElementById('save-layout').style.display = 'inline-block';
     };
     // Cancel/close handler
@@ -755,8 +765,8 @@ function openAddButtonModal(row, col) {
     `;
     // Populate actions
     const actionSelect = modal.querySelector('#add-action');
-    if (availableActions && availableActions.length > 0) {
-        availableActions.forEach(a => {
+    if (appState.availableActions && appState.availableActions.length > 0) {
+        appState.availableActions.forEach(a => {
             const opt = document.createElement('option');
             opt.value = a.id;
             opt.textContent = a.name;
@@ -768,10 +778,10 @@ function openAddButtonModal(row, col) {
         const title = modal.querySelector('#add-title').value;
         const icon = modal.querySelector('#add-icon').value.trim() || undefined;
         const action_id = actionSelect.value;
-        gridData.buttons.push({ row, col, title, icon, action_id });
+        appState.gridData.buttons.push({ row, col, title, icon, action_id });
         document.body.removeChild(backdrop);
         document.body.removeChild(modal);
-        renderGrid(gridData);
+        renderGrid(appState.gridData);
         document.getElementById('save-layout').style.display = 'inline-block';
     };
     // Cancel/close handler
@@ -814,9 +824,9 @@ function openGridSettingsModal() {
         <div style="font-size:0.98em;margin-bottom:8px;color:#b0eaff;">Changing rows/columns updates the grid structure. <b>To save these changes, click the Save button at the top after closing this dialog.</b></div>
         <div class="row">
             <label for="edit-rows">Rows</label>
-            <input id="edit-rows" type="number" min="1" max="20" value="${gridData.rows}" style="width:60px;" />
+            <input id="edit-rows" type="number" min="1" max="20" value="${appState.gridData.rows}" style="width:60px;" />
             <label for="edit-cols">Columns</label>
-            <input id="edit-cols" type="number" min="1" max="20" value="${gridData.cols}" style="width:60px;" />
+            <input id="edit-cols" type="number" min="1" max="20" value="${appState.gridData.cols}" style="width:60px;" />
         </div>
         <div class="modal-actions">
             <button id="grid-save">Save</button>
@@ -826,11 +836,11 @@ function openGridSettingsModal() {
     modal.querySelector('#grid-save').onclick = () => {
         const newRows = parseInt(modal.querySelector('#edit-rows').value, 10);
         const newCols = parseInt(modal.querySelector('#edit-cols').value, 10);
-        gridData.rows = newRows;
-        gridData.cols = newCols;
+        appState.gridData.rows = newRows;
+        appState.gridData.cols = newCols;
         document.body.removeChild(backdrop);
         document.body.removeChild(modal);
-        renderGrid(gridData);
+        renderGrid(appState.gridData);
         document.getElementById('save-layout').style.display = 'inline-block';
     };
     function closeModal() {
@@ -939,15 +949,12 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
     });
 }
 
-let gridBlurMin = 4;
-let gridBlurMax = 12;
-
 function animateGridBlur() {
     if (noAnim) return;
     const grid = document.getElementById('grid-container');
     if (!grid) return;
     const t = Date.now() / 3000;
-    const blur = gridBlurMin + Math.abs(Math.sin(t)) * (gridBlurMax - gridBlurMin);
+    const blur = appState.gridBlurMin + Math.abs(Math.sin(t)) * (appState.gridBlurMax - appState.gridBlurMin);
     grid.style.backdropFilter = `blur(${blur}px) saturate(1.1)`;
     grid.style.webkitBackdropFilter = `blur(${blur}px) saturate(1.1)`;
     requestAnimationFrame(animateGridBlur);
@@ -960,8 +967,8 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
     SetConnectionStatus(false);
     try {
-        gridData = await fetchGridData();
-        renderGrid(gridData);
+        appState.gridData = await fetchGridData();
+        renderGrid(appState.gridData);
     } catch (e) {
         console.error(e);
         const bar = document.getElementById('status-text');
@@ -980,7 +987,6 @@ window.addEventListener('DOMContentLoaded', async () => {
             setupStreamerBot(address, port);
             connected = true;
         } catch {
-            // Fail fast: do not run LAN scan
             SetConnectionStatus(false);
             const bar = document.getElementById('status-text');
             bar.textContent = `Failed to connect to Streamer.bot at ${address}:${port}`;
@@ -996,20 +1002,27 @@ window.addEventListener('DOMContentLoaded', async () => {
             bar.textContent = `Failed to connect to Streamer.bot at ${host}:${port}`;
         }
     } else {
-        // No address/host in query params, check localStorage
-        const storedAddress = localStorage.getItem('sbServerAddress');
-        if (storedAddress) {
-            try {
-                await tryStreamerbotClientConnect(storedAddress, port, 1200);
-                setupStreamerBot(storedAddress, port);
-                connected = true;
-            } catch {
-                // If fails, run LAN scan
+        // 2. Try localhost/127.0.0.1
+        try {
+            await tryStreamerbotClientConnect('127.0.0.1', port, 1200);
+            setupStreamerBot('127.0.0.1', port);
+            connected = true;
+        } catch {
+            // 3. Try localStorage
+            const storedAddress = localStorage.getItem('sbServerAddress');
+            if (storedAddress) {
+                try {
+                    await tryStreamerbotClientConnect(storedAddress, port, 1200);
+                    setupStreamerBot(storedAddress, port);
+                    connected = true;
+                } catch {
+                    // 4. If fails, run LAN scan
+                    discoverStreamerBotOnLAN();
+                }
+            } else {
+                // 4. No stored address, run LAN scan
                 discoverStreamerBotOnLAN();
             }
-        } else {
-            // No stored address, run LAN scan
-            discoverStreamerBotOnLAN();
         }
     }
     animatePolygonalMesh();
@@ -1110,9 +1123,9 @@ if (debugImportBtn && debugImportModal && debugImportTextarea && debugImportCanc
                 btn.col = colMap.get(btn.col);
             });
             // 5. Set new compacted grid size
-            if (gridData) {
-                gridData.rows = sortedRows.length;
-                gridData.cols = sortedCols.length;
+            if (appState.gridData) {
+                appState.gridData.rows = sortedRows.length;
+                appState.gridData.cols = sortedCols.length;
             }
         } else if (Array.isArray(json)) {
             // Simple array of {action_id, title, ...}
@@ -1149,15 +1162,28 @@ if (getQueryParam('import') === null) {
 // Function to import layout from JSON (array of {action_id, title})
 function importLayout(layoutArray) {
     // Replace current gridData.buttons with imported layout
-    if (!gridData) return;
+    if (!appState.gridData) return;
     // Keep grid size, replace buttons
-    gridData.buttons = layoutArray.map(item => ({
-        row: item.row ?? 0,
-        col: item.col ?? 0,
-        title: item.title,
-        icon: item.icon,
-        action_id: item.action_id
-    }));
-    renderGrid(gridData);
+    appState.gridData.buttons = layoutArray.map(sanitizeButton);
+    renderGrid(appState.gridData);
     document.getElementById('save-layout').style.display = 'inline-block';
+}
+
+// Utility: sanitize string for DOM insertion (basic)
+function sanitizeString(str) {
+    if (typeof str !== 'string') return '';
+    return str.replace(/[&<>"']/g, function (c) {
+        return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]);
+    });
+}
+
+// Sanitize all imported button fields
+function sanitizeButton(btn) {
+    return {
+        row: Number.isInteger(btn.row) ? btn.row : 0,
+        col: Number.isInteger(btn.col) ? btn.col : 0,
+        title: sanitizeString(btn.title || ''),
+        icon: sanitizeString(btn.icon || ''),
+        action_id: sanitizeString(btn.action_id || ''),
+    };
 }
