@@ -400,11 +400,25 @@ async function tryStreamerbotClientConnect(host, port, timeout = 2000) {
 }
 
 function resolveHostToIP(host, port, callback) {
-    // Try to fetch a known endpoint to resolve the host (browser will resolve DNS/mDNS/NetBIOS)
-    // This is a workaround: if fetch succeeds, the host is resolvable
+    // Try to fetch with port (HEAD)
     fetch(`http://${host}:${port}/`, { method: 'HEAD', mode: 'no-cors' })
         .then(() => callback(host))
-        .catch(() => callback(null));
+        .catch(() => {
+            // Try to fetch without port (HEAD)
+            fetch(`http://${host}/`, { method: 'HEAD', mode: 'no-cors' })
+                .then(() => callback(host))
+                .catch(() => {
+                    // Try to fetch with port (GET)
+                    fetch(`http://${host}:${port}/`, { method: 'GET', mode: 'no-cors' })
+                        .then(() => callback(host))
+                        .catch(() => {
+                            // Try to fetch without port (GET)
+                            fetch(`http://${host}/`, { method: 'GET', mode: 'no-cors' })
+                                .then(() => callback(host))
+                                .catch(() => callback(null));
+                        });
+                });
+        });
 }
 
 // --- Parallel LAN Discovery with Web Workers ---
@@ -417,7 +431,7 @@ function getQueryParam(name) {
 let meshRows = 13, meshCols = 22;
 if (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) { meshRows = 7; meshCols = 12; }
 if (navigator.deviceMemory && navigator.deviceMemory <= 4) { meshRows = 7; meshCols = 12; }
-const noAnim = getQueryParam('noanim') === '1';
+const noAnim = getQueryParam('noanim') !== null;
 
 // --- Adaptive LAN Scan Concurrency ---
 let SB_DISCOVERY_WORKER_COUNT = 5;
@@ -941,8 +955,7 @@ function animateGridBlur() {
 
 // On DOMContentLoaded, try normal connect, else discover
 window.addEventListener('DOMContentLoaded', async () => {
-    // Disable animations if ?noanim=1 is present
-    if (getQueryParam('noanim') === '1') {
+    if (noAnim) {
         document.body.classList.add('no-anim');
     }
     SetConnectionStatus(false);
@@ -956,12 +969,10 @@ window.addEventListener('DOMContentLoaded', async () => {
         return;
     }
     setupEditModeToggle();
-    // Try to connect to default or stored address/host
     const urlParams = new URLSearchParams(window.location.search);
-    let address = urlParams.get('address') || localStorage.getItem('sbServerAddress');
-    let host = urlParams.get('host');
-    let port = urlParams.get('port') || localStorage.getItem('sbServerPort') || '8080';
-    let triedLocalhost = false;
+    const address = urlParams.get('address');
+    const host = urlParams.get('host');
+    const port = urlParams.get('port') || localStorage.getItem('sbServerPort') || '8080';
     let connected = false;
     if (address) {
         try {
@@ -969,29 +980,37 @@ window.addEventListener('DOMContentLoaded', async () => {
             setupStreamerBot(address, port);
             connected = true;
         } catch {
-            triedLocalhost = (address === '127.0.0.1');
+            // Fail fast: do not run LAN scan
+            SetConnectionStatus(false);
+            const bar = document.getElementById('status-text');
+            bar.textContent = `Failed to connect to Streamer.bot at ${address}:${port}`;
         }
     } else if (host) {
-        // Try to resolve host to IP (browser will handle DNS/mDNS/NetBIOS)
-        resolveHostToIP(host, port, async (resolvedHost) => {
-            if (resolvedHost) {
-                try {
-                    await tryStreamerbotClientConnect(resolvedHost, port, 1200);
-                    setupStreamerBot(resolvedHost, port);
-                    connected = true;
-                } catch {
-                    triedLocalhost = (resolvedHost === '127.0.0.1');
-                }
-            }
-            if (!connected && !window.location.search) {
+        try {
+            await tryStreamerbotClientConnect(host, port, 1200);
+            setupStreamerBot(host, port);
+            connected = true;
+        } catch {
+            SetConnectionStatus(false);
+            const bar = document.getElementById('status-text');
+            bar.textContent = `Failed to connect to Streamer.bot at ${host}:${port}`;
+        }
+    } else {
+        // No address/host in query params, check localStorage
+        const storedAddress = localStorage.getItem('sbServerAddress');
+        if (storedAddress) {
+            try {
+                await tryStreamerbotClientConnect(storedAddress, port, 1200);
+                setupStreamerBot(storedAddress, port);
+                connected = true;
+            } catch {
+                // If fails, run LAN scan
                 discoverStreamerBotOnLAN();
             }
-        });
-        return; // Wait for async callback
-    }
-    if (!connected && triedLocalhost && !window.location.search) {
-        // No params, localhost failed, start discovery
-        discoverStreamerBotOnLAN();
+        } else {
+            // No stored address, run LAN scan
+            discoverStreamerBotOnLAN();
+        }
     }
     animatePolygonalMesh();
     animateGridBlur();
