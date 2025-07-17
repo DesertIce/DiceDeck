@@ -43,6 +43,7 @@ const appState = {
     gridBlurMax: 12,
     unsavedChanges: false,
 };
+window.appState = appState;
 
 // Utility to map action_id to action name
 function getActionNameById(action_id) {
@@ -104,10 +105,11 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
                     };
                     // Allow middle click to trigger normal action
                     el.onmousedown = (e) => {
+                        console.log("YEEET");
                         if (e.button === 1) {
                             e.preventDefault();
                             const actionName = btn.action_id ? getActionNameById(btn.action_id) : (btn.action || '');
-                            if (window.sbClient && window.sbClient.socket.readyState === 1 && actionName) {
+                            if (window.sbClient && window.sbClient.socket && window.sbClient.socket.readyState === 1 && actionName) {
                                 window.sbClient.doAction({ name: actionName });
                             }
                         }
@@ -121,7 +123,12 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
                     el.ondragleave = null;
                     el.onclick = async (e) => {
                         const actionName = btn.action_id ? getActionNameById(btn.action_id) : (btn.action || '');
-                        if (window.sbClient && window.sbClient.socket.readyState === 1 && actionName) {
+                        if (
+                            window.sbClient &&
+                            window.sbClient.socket &&
+                            window.sbClient.socket.readyState === 1 &&
+                            actionName
+                        ) {
                             try {
                                 await window.sbClient.doAction({ name: actionName });
                             } catch (err) {
@@ -383,44 +390,6 @@ function setSaveButtonState() {
     }
 }
 
-// --- Streamer.bot LAN Discovery Overlay and Logic ---
-function showDiscoveryOverlay(message, progress = 0, showBtns = false, onConfirm = null, onReject = null) {
-    let overlay = document.getElementById('sb-discovery-overlay');
-    if (!overlay) {
-        overlay = document.createElement('div');
-        overlay.id = 'sb-discovery-overlay';
-        overlay.innerHTML = `
-            <div class="sb-discovery-box">
-                <div class="sb-discovery-message"></div>
-                <div class="sb-discovery-progress"><div class="sb-discovery-bar" style="width:0%"></div></div>
-                <div class="sb-discovery-btns" style="display:none;">
-                    <button class="sb-discovery-confirm">Yes</button>
-                    <button class="sb-discovery-reject">No</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(overlay);
-    }
-    const msg = overlay.querySelector('.sb-discovery-message');
-    const bar = overlay.querySelector('.sb-discovery-bar');
-    const btns = overlay.querySelector('.sb-discovery-btns');
-    msg.innerHTML = message;
-    bar.style.width = (progress * 100) + '%';
-    if (showBtns) {
-        btns.style.display = 'flex';
-        const confirmBtn = overlay.querySelector('.sb-discovery-confirm');
-        const rejectBtn = overlay.querySelector('.sb-discovery-reject');
-        confirmBtn.onclick = () => { if (onConfirm) onConfirm(); hideDiscoveryOverlay(); };
-        rejectBtn.onclick = () => { if (onReject) onReject(); hideDiscoveryOverlay(); };
-    } else {
-        btns.style.display = 'none';
-    }
-}
-function hideDiscoveryOverlay() {
-    const overlay = document.getElementById('sb-discovery-overlay');
-    if (overlay) overlay.remove();
-}
-
 // Utility to determine WebSocket protocol
 function getWebSocketProtocol() {
     const urlParams = new URLSearchParams(window.location.search);
@@ -458,8 +427,8 @@ async function tryStreamerbotClientConnect(host, port, timeout = 2000) {
                     clearTimeout(timer);
                     if (!resolved) {
                         resolved = true;
-                        if (client && client.disconnect) client.disconnect();
-                        resolve(info);
+                        // Do not disconnect here; keep the client alive
+                        resolve(client); // Return the client instance
                     }
                 },
                 onDisconnect: () => {
@@ -543,123 +512,124 @@ window.MAX_CONCURRENT_PROBES = MAX_CONCURRENT_PROBES;
 const SB_DISCOVERY_WORKER_URL = 'sb-discovery-worker.js';
 // SB_DISCOVERY_WORKER_COUNT is now set above
 
-async function discoverStreamerBotOnLAN() {
-    // Scan most common residential subnets first, then the rest
-    const subnets = [];
-    // 1. Most common: 192.168.1.x
-    subnets.push('192.168.1');
-    // 2. Next most common: 192.168.0.x
-    subnets.push('192.168.0');
-    // 3. Also common: 10.0.0.x
-    subnets.push('10.0.0');
-    // 4. All other 192.168.x.x (excluding .0 and .1)
-    for (let i = 2; i <= 255; i++) {
-        subnets.push(`192.168.${i}`);
-    }
-    // 5. 172.16.x.x through 172.31.x.x
-    for (let i = 16; i <= 31; i++) {
-        subnets.push(`172.${i}.0`);
-    }
-    const port = '8080';
-    const hosts = [];
-    for (const subnet of subnets) {
-        for (let i = 1; i <= 254; i++) {
-            hosts.push(`${subnet}.${i}`);
-        }
-    }
-    // Remove all test/dummy IPs from LAN scan logic
-    // Remove: for (let i = 1; i <= 78; i++) { hosts.push(`192.0.2.${i}`); }
-    // Split hosts into chunks for workers
-    const chunkSize = Math.ceil(hosts.length / SB_DISCOVERY_WORKER_COUNT);
-    let found = false;
-    let completedWorkers = 0;
-    let totalProbed = 0;
-    let totalToProbe = hosts.length;
-    let workers = [];
-    function stopAllWorkers() {
-        workers.forEach(w => w.terminate());
-        workers = [];
-    }
-    const discoveryNote = '<br><small style="color:#aaa">Note: You may see many connection errors in your browser console during scanning. This is normal and expected.<br><br>Tip: Discovery is only needed if the server IP address changes or is lost. If you already know the IP and port of your Streamer.bot server, you can skip scanning by adding them to the URL as query parameters.<br>For example: <code>?address=192.168.1.100&port=8080</code> or <code>?host=streamerbot.local</code> (host can be a hostname, mDNS, or DNS name).</small>';
-    showDiscoveryOverlay('Scanning LAN for Streamer.bot...' + discoveryNote, 0);
-    const workerDelay = 200; // ms delay between worker spawns
-    for (let w = 0; w < SB_DISCOVERY_WORKER_COUNT; w++) {
-        setTimeout(() => {
-            const chunk = hosts.slice(w * chunkSize, (w + 1) * chunkSize);
-            if (chunk.length === 0) return;
-            const worker = new Worker(SB_DISCOVERY_WORKER_URL);
-            workers.push(worker);
-            worker.postMessage({ ips: chunk, port });
-            worker.onmessage = async (e) => {
-                if (e.data.log) {
-                    console.log(`[LANScan] ${e.data.log}`);
-                }
-                if (found) return;
-                if (e.data.progress) {
-                    totalProbed += e.data.progress;
-                    showDiscoveryOverlay(`Scanning LAN for Streamer.bot... (${totalProbed}/${totalToProbe})` + discoveryNote, totalProbed / totalToProbe);
-                }
-                if (e.data.ip) {
-                    // Escalate to StreamerbotClient handshake
-                    const isTargetIP = e.data.ip === '192.168.50.32';
-                    if (isTargetIP) {
-                        console.info(`[LANScan][DETAIL] Attempting handshake with ${e.data.ip}:${port}`);
-                    }
-                    try {
-                        const info = await tryStreamerbotClientConnect(e.data.ip, port, 1200);
-                        if (isTargetIP) {
-                            console.info(`[LANScan][DETAIL] Handshake success for ${e.data.ip}:${port}`);
-                            console.info(`[LANScan][DETAIL] Handshake info:`, info);
-                        }
-                        found = true;
-                        stopAllWorkers();
-                        showDiscoveryOverlay(`Found Streamer.bot at ${e.data.ip}:${port}. Connect?`, 1, true,
-                            () => {
-                                localStorage.setItem('sbServerAddress', e.data.ip);
-                                localStorage.setItem('sbServerPort', port);
-                                hideDiscoveryOverlay();
-                                setupStreamerBot(e.data.ip, port);
-                            },
-                            () => {
-                                found = false;
-                                discoverStreamerBotOnLAN();
-                            }
-                        );
-                    } catch (err) {
-                        // Not a valid Streamer.bot instance, keep going
-                        if (err && err.host && err.port && err.reason) {
-                            if (isTargetIP) {
-                                console.warn(`[LANScan][DETAIL] Failed to connect to ${err.host}:${err.port} - ${err.reason}`);
-                                if (err && err.stack) {
-                                    console.warn(`[LANScan][DETAIL] Stack:`, err.stack);
-                                }
-                            } else {
-                                // Only log disconnects and errors for other IPs
-                                if (err.reason !== 'timeout' && !"Timeout" in err.toString()) {
-                                    console.warn(`[LANScan] Failed to connect to ${err.host}:${err.port} - ${err.reason}`);
-                                }
-                            }
-                        }
-                    }
-                }
-                if (e.data.done) {
-                    completedWorkers++;
-                    // Do not increment totalProbed here, as it's now updated per-IP
-                    if (completedWorkers === workers.length && !found) {
-                        showDiscoveryOverlay('No Streamer.bot server found on your LAN. Please check your network or enter the address manually.', 1, false);
-                        setTimeout(hideDiscoveryOverlay, 4000);
-                    }
-                }
-            };
-        }, w * workerDelay);
-    }
-}
+// This function is no longer used as LAN scan is handled by lan-scan.js
+// async function discoverStreamerBotOnLAN() {
+//     // Scan most common residential subnets first, then the rest
+//     const subnets = [];
+//     // 1. Most common: 192.168.1.x
+//     subnets.push('192.168.1');
+//     // 2. Next most common: 192.168.0.x
+//     subnets.push('192.168.0');
+//     // 3. Also common: 10.0.0.x
+//     subnets.push('10.0.0');
+//     // 4. All other 192.168.x.x (excluding .0 and .1)
+//     for (let i = 2; i <= 255; i++) {
+//         subnets.push(`192.168.${i}`);
+//     }
+//     // 5. 172.16.x.x through 172.31.x.x
+//     for (let i = 16; i <= 31; i++) {
+//         subnets.push(`172.${i}.0`);
+//     }
+//     const port = '8080';
+//     const hosts = [];
+//     for (const subnet of subnets) {
+//         for (let i = 1; i <= 254; i++) {
+//             hosts.push(`${subnet}.${i}`);
+//         }
+//     }
+//     // Remove all test/dummy IPs from LAN scan logic
+//     // Remove: for (let i = 1; i <= 78; i++) { hosts.push(`192.0.2.${i}`); }
+//     // Split hosts into chunks for workers
+//     const chunkSize = Math.ceil(hosts.length / SB_DISCOVERY_WORKER_COUNT);
+//     let found = false;
+//     let completedWorkers = 0;
+//     let totalProbed = 0;
+//     let totalToProbe = hosts.length;
+//     let workers = [];
+//     function stopAllWorkers() {
+//         workers.forEach(w => w.terminate());
+//         workers = [];
+//     }
+//     const discoveryNote = '<br><small style="color:#aaa">Note: You may see many connection errors in your browser console during scanning. This is normal and expected.<br><br>Tip: Discovery is only needed if the server IP address changes or is lost. If you already know the IP and port of your Streamer.bot server, you can skip scanning by adding them to the URL as query parameters.<br>For example: <code>?address=192.168.1.100&port=8080</code> or <code>?host=streamerbot.local</code> (host can be a hostname, mDNS, or DNS name).</small>';
+//     showDiscoveryOverlay('Scanning LAN for Streamer.bot...' + discoveryNote, 0);
+//     const workerDelay = 200; // ms delay between worker spawns
+//     for (let w = 0; w < SB_DISCOVERY_WORKER_COUNT; w++) {
+//         setTimeout(() => {
+//             const chunk = hosts.slice(w * chunkSize, (w + 1) * chunkSize);
+//             if (chunk.length === 0) return;
+//             const worker = new Worker(SB_DISCOVERY_WORKER_URL);
+//             workers.push(worker);
+//             worker.postMessage({ ips: chunk, port });
+//             worker.onmessage = async (e) => {
+//                 if (e.data.log) {
+//                     console.log(`[LANScan] ${e.data.log}`);
+//                 }
+//                 if (found) return;
+//                 if (e.data.progress) {
+//                     totalProbed += e.data.progress;
+//                     showDiscoveryOverlay(`Scanning LAN for Streamer.bot... (${totalProbed}/${totalToProbe})` + discoveryNote, totalProbed / totalToProbe);
+//                 }
+//                 if (e.data.ip) {
+//                     // Escalate to StreamerbotClient handshake
+//                     const isTargetIP = e.data.ip === '192.168.50.32';
+//                     if (isTargetIP) {
+//                         console.info(`[LANScan][DETAIL] Attempting handshake with ${e.data.ip}:${port}`);
+//                     }
+//                     try {
+//                         const info = await tryStreamerbotClientConnect(e.data.ip, port, 1200);
+//                         if (isTargetIP) {
+//                             console.info(`[LANScan][DETAIL] Handshake success for ${e.data.ip}:${port}`);
+//                             console.info(`[LANScan][DETAIL] Handshake info:`, info);
+//                         }
+//                         found = true;
+//                         stopAllWorkers();
+//                         showDiscoveryOverlay(`Found Streamer.bot at ${e.data.ip}:${port}. Connect?`, 1, true,
+//                             () => {
+//                                 localStorage.setItem('sbServerAddress', e.data.ip);
+//                                 localStorage.setItem('sbServerPort', port);
+//                                 hideDiscoveryOverlay();
+//                                 setupStreamerBot(e.data.ip, port);
+//                             },
+//                             () => {
+//                                 found = false;
+//                                 discoverStreamerBotOnLAN();
+//                             }
+//                         );
+//                     } catch (err) {
+//                         // Not a valid Streamer.bot instance, keep going
+//                         if (err && err.host && err.port && err.reason) {
+//                             if (isTargetIP) {
+//                                 console.warn(`[LANScan][DETAIL] Failed to connect to ${err.host}:${err.port} - ${err.reason}`);
+//                                 if (err && err.stack) {
+//                                     console.warn(`[LANScan][DETAIL] Stack:`, err.stack);
+//                                 }
+//                             } else {
+//                                 // Only log disconnects and errors for other IPs
+//                                 if (err.reason !== 'timeout' && !"Timeout" in err.toString()) {
+//                                     console.warn(`[LANScan] Failed to connect to ${err.host}:${err.port} - ${err.reason}`);
+//                                 }
+//                             }
+//                         }
+//                     }
+//                 }
+//                 if (e.data.done) {
+//                     completedWorkers++;
+//                     // Do not increment totalProbed here, as it's now updated per-IP
+//                     if (completedWorkers === workers.length && !found) {
+//                         showDiscoveryOverlay('No Streamer.bot server found on your LAN. Please check your network or enter the address manually.', 1, false);
+//                         setTimeout(hideDiscoveryOverlay, 4000);
+//                     }
+//                 }
+//             };
+//         }, w * workerDelay);
+//     }
+// }
 
 // Patch setupStreamerBot to accept address/port
 function setupStreamerBot(address, port) {
     if (!window.StreamerbotClient) {
         SetConnectionStatus(false);
-        return;
+        return Promise.reject('StreamerbotClient not available');
     }
     const urlParams = new URLSearchParams(window.location.search);
     const paramAddress = urlParams.get('address');
@@ -670,48 +640,38 @@ function setupStreamerBot(address, port) {
         console.log(`[DiceDeck] Using Streamer.bot address from query params: ${address}:${port}`);
     }
     const storedInstanceId = localStorage.getItem('sbInstanceId');
-    tryStreamerbotClientConnect(address, port).then((client) => {
+    return tryStreamerbotClientConnect(address, port).then((client) => {
         window.sbClient = client;
         // Fetch available actions immediately after connection
         if (client.getActions) {
-            client.getActions().then(response => {
+            return client.getActions().then(response => {
                 if (response && response.status === 'ok' && Array.isArray(response.actions)) {
                     appState.availableActions = response.actions;
                 }
-            }).catch(() => {
-                appState.availableActions = [];
             });
         }
+        return Promise.resolve(); // No actions to fetch
+    }).then(() => {
         // Confirm instanceId if previously stored
         if (storedInstanceId) {
-            (client.getHostInfo ? client.getHostInfo() : Promise.resolve()).then(hostInfo => {
+            return (client.getHostInfo ? client.getHostInfo() : Promise.resolve()).then(hostInfo => {
                 if (hostInfo && hostInfo.instanceId === storedInstanceId) {
                     console.log(`[DiceDeck] Confirmed reconnection to previously confirmed Streamer.bot instance: ${hostInfo.instanceId}`);
                 } else {
                     console.warn(`[DiceDeck] Connected to a different Streamer.bot instance! Expected: ${storedInstanceId}, Got: ${hostInfo && hostInfo.instanceId}`);
-                    showDiscoveryOverlay(
-                        `Connected to a different Streamer.bot instance:<br><b>${hostInfo && hostInfo.name}</b><br>ID: <code>${hostInfo && hostInfo.instanceId}</code><br><br>Do you want to accept this new instance?`,
-                        1, true,
-                        () => {
-                            localStorage.setItem('sbInstanceId', hostInfo.instanceId);
-                            localStorage.setItem('sbServerAddress', address);
-                            localStorage.setItem('sbServerPort', port);
-                            hideDiscoveryOverlay();
-                            console.log('[DiceDeck] User accepted new Streamer.bot instance.');
-                        },
-                        () => {
-                            hideDiscoveryOverlay();
-                            discoverStreamerBotOnLAN();
-                        }
-                    );
+                    // This part of the logic is now handled by lan-scan.js, so we just log and let it handle the overlay
+                    console.log('[DiceDeck] User accepted new Streamer.bot instance.');
                 }
-            }).catch(e => {
-                console.warn('[DiceDeck] Could not confirm Streamer.bot instanceId after reconnect.', e);
             });
         }
+        return Promise.resolve(); // No instanceId to confirm
+    }).then(() => {
         SetConnectionStatus(true);
-    }).catch(() => {
+        return Promise.resolve();
+    }).catch((err) => {
         SetConnectionStatus(false);
+        console.warn('[DiceDeck] Failed to connect to Streamer.bot:', err);
+        return Promise.reject(err);
     });
 }
 
@@ -1048,50 +1008,62 @@ window.addEventListener('DOMContentLoaded', async () => {
     const host = urlParams.get('host');
     const port = urlParams.get('port') || localStorage.getItem('sbServerPort') || '8080';
     let connected = false;
+    let connectPromise;
     if (address) {
-        try {
-            await tryStreamerbotClientConnect(address, port, 1200);
-            setupStreamerBot(address, port);
-            connected = true;
-        } catch {
-            SetConnectionStatus(false);
-            const bar = document.getElementById('status-text');
-            bar.textContent = `Failed to connect to Streamer.bot at ${address}:${port}`;
-        }
+        connectPromise = setupStreamerBot(address, port)
+            .then(() => {
+                connected = true;
+                console.log('[DiceDeck] Connected to Streamer.bot at', address, port);
+            })
+            .catch(() => {
+                SetConnectionStatus(false);
+                const bar = document.getElementById('status-text');
+                bar.textContent = `Failed to connect to Streamer.bot at ${address}:${port}`;
+                console.warn('[DiceDeck] Failed to connect to Streamer.bot at', address, port);
+            });
     } else if (host) {
-        try {
-            await tryStreamerbotClientConnect(host, port, 1200);
-            setupStreamerBot(host, port);
-            connected = true;
-        } catch {
-            SetConnectionStatus(false);
-            const bar = document.getElementById('status-text');
-            bar.textContent = `Failed to connect to Streamer.bot at ${host}:${port}`;
-        }
+        connectPromise = setupStreamerBot(host, port)
+            .then(() => {
+                connected = true;
+                console.log('[DiceDeck] Connected to Streamer.bot at', host, port);
+            })
+            .catch(() => {
+                SetConnectionStatus(false);
+                const bar = document.getElementById('status-text');
+                bar.textContent = `Failed to connect to Streamer.bot at ${host}:${port}`;
+                console.warn('[DiceDeck] Failed to connect to Streamer.bot at', host, port);
+            });
     } else {
         // 2. Try localhost/127.0.0.1
-        try {
-            await tryStreamerbotClientConnect('127.0.0.1', port, 1200);
-            setupStreamerBot('127.0.0.1', port);
-            connected = true;
-        } catch {
-            // 3. Try localStorage
-            const storedAddress = localStorage.getItem('sbServerAddress');
-            if (storedAddress) {
-                try {
-                    await tryStreamerbotClientConnect(storedAddress, port, 1200);
-                    setupStreamerBot(storedAddress, port);
-                    connected = true;
-                } catch {
-                    // 4. If fails, run LAN scan
-                    discoverStreamerBotOnLAN();
+        connectPromise = setupStreamerBot('127.0.0.1', port)
+            .then(() => {
+                connected = true;
+                console.log('[DiceDeck] Connected to Streamer.bot at 127.0.0.1', port);
+            })
+            .catch(() => {
+                // 3. Try localStorage
+                const storedAddress = localStorage.getItem('sbServerAddress');
+                if (storedAddress) {
+                    connectPromise = setupStreamerBot(storedAddress, port)
+                        .then(() => {
+                            connected = true;
+                            console.log('[DiceDeck] Connected to Streamer.bot at', storedAddress, port);
+                        })
+                        .catch(() => {
+                            // 4. If fails, run LAN scan
+                            // This part of the logic is now handled by lan-scan.js
+                            console.log('[DiceDeck] No stored address, running LAN scan for Streamer.bot.');
+                            // The actual LAN scan logic is now in lan-scan.js
+                        });
+                } else {
+                    // 4. No stored address, run LAN scan
+                    // This part of the logic is now handled by lan-scan.js
+                    console.log('[DiceDeck] No stored address, running LAN scan for Streamer.bot.');
                 }
-            } else {
-                // 4. No stored address, run LAN scan
-                discoverStreamerBotOnLAN();
-            }
-        }
+            });
     }
+    // --- Ensure availableActions is always populated if possible ---
+    // (Removed: now handled in setupStreamerBot)
     animatePolygonalMesh();
     animateGridBlur();
     // Add grid settings floating button if not present
