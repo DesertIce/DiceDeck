@@ -424,7 +424,9 @@ function hideDiscoveryOverlay() {
 // Utility to determine WebSocket protocol
 function getWebSocketProtocol() {
     const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('ws') === '1') return 'ws';
+    const wsParam = urlParams.get('ws');
+    if (wsParam === 'ws') return 'ws';
+    if (wsParam === 'wss') return 'wss';
     return window.location.protocol === 'https:' ? 'wss' : 'ws';
 }
 
