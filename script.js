@@ -444,7 +444,7 @@ async function tryStreamerbotClientConnect(host, port, timeout = 2000) {
             client = new window.StreamerbotClient({
                 host,
                 port,
-                useSecure: getWebSocketProtocol() === 'wss',
+                scheme: getWebSocketProtocol(),
                 onConnect: async (info) => {
                     clearTimeout(timer);
                     if (!resolved) {
