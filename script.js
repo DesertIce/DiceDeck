@@ -430,6 +430,12 @@ function getWebSocketProtocol() {
     return window.location.protocol === 'https:' ? 'wss' : 'ws';
 }
 
+// Utility to get password from query param
+function getStreamerbotPassword() {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get('password') || undefined;
+}
+
 // Use StreamerbotClient for handshake/info
 async function tryStreamerbotClientConnect(host, port, timeout = 2000) {
     return new Promise((resolve, reject) => {
@@ -447,6 +453,7 @@ async function tryStreamerbotClientConnect(host, port, timeout = 2000) {
                 host,
                 port,
                 scheme: getWebSocketProtocol(),
+                password: getStreamerbotPassword(),
                 onConnect: async (info) => {
                     clearTimeout(timer);
                     if (!resolved) {
@@ -663,62 +670,49 @@ function setupStreamerBot(address, port) {
         console.log(`[DiceDeck] Using Streamer.bot address from query params: ${address}:${port}`);
     }
     const storedInstanceId = localStorage.getItem('sbInstanceId');
-    const client = new window.StreamerbotClient({
-        host: address,
-        port: port,
-        onConnect: async (info) => {
-            console.log(`Streamer.bot successfully connected to ${address}:${port}`);
-            console.debug(info);
-            SetConnectionStatus(true);
-            // Fetch available actions immediately after connection
-            if (client.getActions) {
-                try {
-                    const response = await client.getActions();
-                    if (response && response.status === 'ok' && Array.isArray(response.actions)) {
-                        appState.availableActions = response.actions;
-                    }
-                } catch (e) {
-                    appState.availableActions = [];
+    tryStreamerbotClientConnect(address, port).then((client) => {
+        window.sbClient = client;
+        // Fetch available actions immediately after connection
+        if (client.getActions) {
+            client.getActions().then(response => {
+                if (response && response.status === 'ok' && Array.isArray(response.actions)) {
+                    appState.availableActions = response.actions;
                 }
-            }
-            // Confirm instanceId if previously stored
-            if (storedInstanceId) {
-                try {
-                    let hostInfo = info;
-                    if (client.getHostInfo) {
-                        hostInfo = await client.getHostInfo();
-                    }
-                    if (hostInfo && hostInfo.instanceId === storedInstanceId) {
-                        console.log(`[DiceDeck] Confirmed reconnection to previously confirmed Streamer.bot instance: ${hostInfo.instanceId}`);
-                    } else {
-                        console.warn(`[DiceDeck] Connected to a different Streamer.bot instance! Expected: ${storedInstanceId}, Got: ${hostInfo && hostInfo.instanceId}`);
-                        showDiscoveryOverlay(
-                            `Connected to a different Streamer.bot instance:<br><b>${hostInfo && hostInfo.name}</b><br>ID: <code>${hostInfo && hostInfo.instanceId}</code><br><br>Do you want to accept this new instance?`,
-                            1, true,
-                            () => {
-                                localStorage.setItem('sbInstanceId', hostInfo.instanceId);
-                                localStorage.setItem('sbServerAddress', address);
-                                localStorage.setItem('sbServerPort', port);
-                                hideDiscoveryOverlay();
-                                console.log('[DiceDeck] User accepted new Streamer.bot instance.');
-                            },
-                            () => {
-                                hideDiscoveryOverlay();
-                                discoverStreamerBotOnLAN();
-                            }
-                        );
-                    }
-                } catch (e) {
-                    console.warn('[DiceDeck] Could not confirm Streamer.bot instanceId after reconnect.', e);
-                }
-            }
-        },
-        onDisconnect: () => {
-            console.error(`Streamer.bot disconnected from ${address}:${port}`);
-            SetConnectionStatus(false);
+            }).catch(() => {
+                appState.availableActions = [];
+            });
         }
+        // Confirm instanceId if previously stored
+        if (storedInstanceId) {
+            (client.getHostInfo ? client.getHostInfo() : Promise.resolve()).then(hostInfo => {
+                if (hostInfo && hostInfo.instanceId === storedInstanceId) {
+                    console.log(`[DiceDeck] Confirmed reconnection to previously confirmed Streamer.bot instance: ${hostInfo.instanceId}`);
+                } else {
+                    console.warn(`[DiceDeck] Connected to a different Streamer.bot instance! Expected: ${storedInstanceId}, Got: ${hostInfo && hostInfo.instanceId}`);
+                    showDiscoveryOverlay(
+                        `Connected to a different Streamer.bot instance:<br><b>${hostInfo && hostInfo.name}</b><br>ID: <code>${hostInfo && hostInfo.instanceId}</code><br><br>Do you want to accept this new instance?`,
+                        1, true,
+                        () => {
+                            localStorage.setItem('sbInstanceId', hostInfo.instanceId);
+                            localStorage.setItem('sbServerAddress', address);
+                            localStorage.setItem('sbServerPort', port);
+                            hideDiscoveryOverlay();
+                            console.log('[DiceDeck] User accepted new Streamer.bot instance.');
+                        },
+                        () => {
+                            hideDiscoveryOverlay();
+                            discoverStreamerBotOnLAN();
+                        }
+                    );
+                }
+            }).catch(e => {
+                console.warn('[DiceDeck] Could not confirm Streamer.bot instanceId after reconnect.', e);
+            });
+        }
+        SetConnectionStatus(true);
+    }).catch(() => {
+        SetConnectionStatus(false);
     });
-    window.sbClient = client;
 }
 
 function openEditModal(idx) {
