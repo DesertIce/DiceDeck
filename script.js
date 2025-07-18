@@ -1,4 +1,8 @@
 // Utility to fetch JSON data
+/**
+ * Fetches the grid data from data.json and patches legacy action names.
+ * @returns {Promise<Object>} The grid data object.
+ */
 async function fetchGridData() {
     try {
         const res = await fetch('data.json');
@@ -19,6 +23,10 @@ async function fetchGridData() {
 }
 
 // Status bar update
+/**
+ * Updates the connection status bar in the UI.
+ * @param {boolean} connected - Whether the app is connected to Streamer.bot.
+ */
 function SetConnectionStatus(connected) {
     const bar = document.getElementById('status-text');
     const indicator = document.getElementById('status-indicator');
@@ -46,6 +54,11 @@ const appState = {
 window.appState = appState;
 
 // Utility to map action_id to action name
+/**
+ * Maps an action_id to its action name using appState.availableActions.
+ * @param {string} action_id
+ * @returns {string}
+ */
 function getActionNameById(action_id) {
     if (!appState.availableActions || !Array.isArray(appState.availableActions)) return '';
     const found = appState.availableActions.find(a => a.id === action_id);
@@ -55,6 +68,11 @@ function getActionNameById(action_id) {
     return found ? found.name : '';
 }
 // Utility to map action name to action_id
+/**
+ * Maps an action name to its action_id using appState.availableActions.
+ * @param {string} action_name
+ * @returns {string}
+ */
 function getActionIdByName(action_name) {
     if (!appState.availableActions || !Array.isArray(appState.availableActions)) return '';
     const found = appState.availableActions.find(a => a.name === action_name);
@@ -64,6 +82,10 @@ function getActionIdByName(action_name) {
     return found ? found.id : '';
 }
 
+/**
+ * Renders the grid of buttons in the UI.
+ * @param {Object} params - Grid parameters (rows, cols, buttons, gap, blurMin, blurMax)
+ */
 function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
     const grid = document.getElementById('grid-container');
     if (!grid) {
@@ -119,7 +141,6 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
                     };
                     // Allow middle click to trigger normal action
                     el.onmousedown = (e) => {
-                        console.log("YEEET");
                         if (e.button === 1) {
                             e.preventDefault();
                             const actionName = btn.action_id ? getActionNameById(btn.action_id) : (btn.action || '');
@@ -223,6 +244,10 @@ function handleDragOver(e) {
     this.classList.add('drag-over');
 }
 
+/**
+ * Handles the drop event for drag-and-drop grid editing.
+ * @param {DragEvent} e
+ */
 function handleDrop(e) {
     e.preventDefault();
     this.classList.remove('drag-over');
@@ -272,6 +297,9 @@ function handleDragLeave(e) {
     this.classList.remove('drag-over');
 }
 
+/**
+ * Sets up the edit mode toggle and inline grid settings UI.
+ */
 function setupEditModeToggle() {
     const editBtn = document.getElementById('edit-toggle');
     const saveBtn = document.getElementById('save-layout');
@@ -406,7 +434,9 @@ function setupEditModeToggle() {
     setSaveButtonState();
 }
 
-// Move setSaveButtonState to top level
+/**
+ * Sets the state of the save button based on edit mode and unsaved changes.
+ */
 function setSaveButtonState() {
     const saveBtn = document.getElementById('save-layout');
     if (!saveBtn) {
@@ -428,7 +458,13 @@ function getStreamerbotPassword() {
     return urlParams.get('password') || undefined;
 }
 
-// Use StreamerbotClient for handshake/info
+/**
+ * Attempts to connect to Streamer.bot using the provided host and port.
+ * @param {string} host
+ * @param {string} port
+ * @param {number} timeout
+ * @returns {Promise<Object>} The connected client instance.
+ */
 async function tryStreamerbotClientConnect(host, port, timeout = 2000) {
     return new Promise((resolve, reject) => {
         let resolved = false;
@@ -483,6 +519,7 @@ async function tryStreamerbotClientConnect(host, port, timeout = 2000) {
 /**
  * Handles custom messages from the backend for proxy RPCs and other events.
  * Extend this to handle new message types as needed.
+ * @param {Object} message
  */
 function onCustomMessage(message){
     try {
@@ -512,34 +549,69 @@ if (navigator.deviceMemory && navigator.deviceMemory <= 4) { meshRows = 7; meshC
 const noAnim = getQueryParam('noanim') !== null;
 
 // --- DiceDeckClient Abstraction ---
+/**
+ * Base class for DiceDeck client implementations.
+ * @abstract
+ */
 class DiceDeckClient {
+    /**
+     * Fetches available actions.
+     * @returns {Promise<{status: string, actions: Array}>}
+     */
     async getActions() { throw new Error('Not implemented'); }
+    /**
+     * Triggers an action.
+     * @param {Object} params
+     * @returns {Promise<{status: string}>}
+     */
     async doAction(params) { throw new Error('Not implemented'); }
 }
 
+/**
+ * Direct client implementation using the native Streamer.bot WebSocket API.
+ */
 class DirectStreamerBotClient extends DiceDeckClient {
+    /**
+     * @param {Object} client - The native Streamer.bot client instance.
+     */
     constructor(client) {
         super();
         this.client = client;
     }
+    /**
+     * Fetches available actions from the native client.
+     * @returns {Promise<{status: string, actions: Array}>}
+     */
     async getActions() {
         return this.client.getActions();
     }
+    /**
+     * Triggers an action on the native client.
+     * @param {Object} params
+     * @returns {Promise<{status: string}>}
+     */
     async doAction(params) {
         return this.client.doAction(params);
     }
 }
 
+/**
+ * Proxy client implementation using RPC via localClient.doAction and async responses.
+ * Only one in-flight getActions is supported at a time.
+ */
 class ProxyStreamerBotClient extends DiceDeckClient {
     /**
-     * ProxyStreamerBotClient uses RPC via localClient.doAction and expects async responses
-     * to be delivered via onCustomMessage. Only one in-flight getActions is supported.
+     * @param {Object} localClient - The local client used to send RPCs.
      */
     constructor(localClient) {
         super();
         this.localClient = localClient;
         this._pendingGetActions = null; // {resolve, reject, timeoutId}
     }
+    /**
+     * Fetches available actions via RPC. Resolves when the response is received.
+     * @returns {Promise<{status: string, actions: Array}>}
+     */
     async getActions() {
         if (this._pendingGetActions) {
             return Promise.reject(new Error('A getActions call is already pending'));
@@ -557,6 +629,7 @@ class ProxyStreamerBotClient extends DiceDeckClient {
     /**
      * Called by onCustomMessage when the remote actions response arrives.
      * Maps [{Item1, Item2}] to [{id, name}].
+     * @param {Array} actions - The actions array from the remote response.
      */
     _handleGetActionsResponse(actions) {
         if (this._pendingGetActions) {
@@ -569,6 +642,11 @@ class ProxyStreamerBotClient extends DiceDeckClient {
             this._pendingGetActions = null;
         }
     }
+    /**
+     * Triggers a remote action via RPC. No feedback is provided to the caller.
+     * @param {Object} params
+     * @returns {Promise<{status: string}>}
+     */
     async doAction(params) {
         // NOTE: No feedback is provided to the caller for remoteDoAction.
         // If you want to support async responses, implement a similar pattern as getActions.
@@ -578,6 +656,11 @@ class ProxyStreamerBotClient extends DiceDeckClient {
     }
 }
 
+/**
+ * Creates the appropriate DiceDeck client based on query parameters.
+ * @param {Object} client - The native Streamer.bot client instance.
+ * @returns {DiceDeckClient}
+ */
 function createDiceDeckClient(client) {
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.has('proxy')) {
@@ -587,7 +670,12 @@ function createDiceDeckClient(client) {
     }
 }
 
-// Patch setupStreamerBot to accept address/port
+/**
+ * Sets up the Streamer.bot connection and assigns the client abstraction.
+ * @param {string} address
+ * @param {string} port
+ * @returns {Promise<void>}
+ */
 function setupStreamerBot(address, port) {
     if (!window.StreamerbotClient) {
         SetConnectionStatus(false);
@@ -617,6 +705,10 @@ function setupStreamerBot(address, port) {
     });
 }
 
+/**
+ * Opens the edit modal for a grid button.
+ * @param {number} idx - The index of the button in appState.gridData.buttons.
+ */
 function openEditModal(idx) {
     const btn = appState.gridData.buttons[idx];
     if (!btn) {
@@ -713,6 +805,11 @@ function openEditModal(idx) {
     iconInput.dispatchEvent(new Event('input'));
 }
 
+/**
+ * Opens the add button modal for a specific grid cell.
+ * @param {number} row
+ * @param {number} col
+ */
 function openAddButtonModal(row, col) {
     if (!appState.gridData) {
         console.error('openAddButtonModal: appState.gridData is missing');
@@ -787,6 +884,9 @@ function openAddButtonModal(row, col) {
     iconInput.dispatchEvent(new Event('input'));
 }
 
+/**
+ * Opens the grid settings modal.
+ */
 function openGridSettingsModal() {
     if (!appState.gridData) {
         console.error('openGridSettingsModal: appState.gridData is missing');
@@ -843,6 +943,10 @@ let meshAnimationState = {
     cols: meshCols,
 };
 
+/**
+ * Animates the polygonal mesh SVG background.
+ * @param {boolean} force - If true, forces a redraw.
+ */
 function animatePolygonalMesh(force) {
     if (noAnim) return;
     if (!meshAnimationState.svg) {
@@ -933,6 +1037,9 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
     });
 }
 
+/**
+ * Animates the grid blur effect.
+ */
 function animateGridBlur() {
     if (noAnim) return;
     const grid = document.getElementById('grid-container');
@@ -1186,7 +1293,10 @@ if (getQueryParam('import') === null) {
     if (debugBtn) debugBtn.style.display = 'none';
 }
 
-// Function to import layout from JSON (array of {action_id, title})
+/**
+ * Imports a layout from an array of button objects.
+ * @param {Array} layoutArray
+ */
 function importLayout(layoutArray) {
     if (!appState.gridData) {
         console.error('importLayout: appState.gridData is missing');
@@ -1227,7 +1337,11 @@ function importLayout(layoutArray) {
     setSaveButtonState();
 }
 
-// Utility: Normalize button positions so min row/col is 0, and fill from top-left
+/**
+ * Normalizes button positions so min row/col is 0, and fills from top-left.
+ * @param {Array} buttons
+ * @returns {Array}
+ */
 function normalizeButtons(buttons) {
     if (!Array.isArray(buttons) || buttons.length === 0) {
         console.warn('normalizeButtons: buttons is not a non-empty array', buttons);
@@ -1245,7 +1359,12 @@ function normalizeButtons(buttons) {
     }
     return buttons;
 }
-// Utility: Check for gaps in first row/col and show a warning
+/**
+ * Checks for gaps in the first row/col and shows a warning if found.
+ * @param {Array} buttons
+ * @param {number} rows
+ * @param {number} cols
+ */
 function checkGridGaps(buttons, rows, cols) {
     let firstRowEmpty = true, firstColEmpty = true;
     for (let c = 0; c < cols; c++) {
@@ -1285,7 +1404,11 @@ function checkGridGaps(buttons, rows, cols) {
     }
 }
 
-// Utility: sanitize string for DOM insertion (basic)
+/**
+ * Sanitizes a string for DOM insertion (basic).
+ * @param {string} str
+ * @returns {string}
+ */
 function sanitizeString(str) {
     if (typeof str !== 'string') return '';
     return str.replace(/[&<>"']/g, function (c) {
@@ -1293,7 +1416,11 @@ function sanitizeString(str) {
     });
 }
 
-// Sanitize all imported button fields
+/**
+ * Sanitizes all imported button fields.
+ * @param {Object} btn
+ * @returns {Object}
+ */
 function sanitizeButton(btn) {
     return {
         row: Number.isInteger(btn.row) ? btn.row : 0,
