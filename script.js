@@ -128,13 +128,8 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
         }
 
         const btn = e.currentTarget.__btnData;
-        if (
-            window.sbClient &&
-            window.sbClient.client &&
-            window.sbClient.client.doAction &&
-            window.sbClient.client.socket &&
-            window.sbClient.client.socket.readyState === 1 
-        ) {
+        // Use optional chaining for cleaner code
+        if (window.sbClient?.doAction) {
             window.sbClient.doAction(btn.action_id).catch(err => {
                 console.error('Failed to trigger action:', btn.action_id, err);
                 alert('Failed to trigger action: ' + btn.action_id);
@@ -175,9 +170,12 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
                     el.onmousedown = (e) => {
                         if (e.button === 1) {
                             e.preventDefault();
-                            const actionName = btn.action_id ? getActionNameById(btn.action_id) : (btn.action || '');
-                            if (window.sbClient && window.sbClient.socket && window.sbClient.socket.readyState === 1 && actionName) {
-                                window.sbClient.doAction({ name: actionName });
+                            // Apply optional chaining consistently and add error handling
+                            if (window.sbClient?.doAction && btn.action_id) {
+                                window.sbClient.doAction(btn.action_id).catch(err => {
+                                    console.error('Failed to trigger action:', btn.action_id, err);
+                                    alert('Failed to trigger action: ' + btn.action_id);
+                                });
                             }
                         }
                     };
@@ -498,7 +496,6 @@ async function tryStreamerbotClientConnect(port, timeout = 2000) {
                 host: "127.0.0.1",
                 port,
                 onConnect: async (info) => {
-                    SetConnectionStatus(true);
                     clearTimeout(timer);
                     if (!resolved) {
                         resolved = true;
@@ -543,9 +540,16 @@ async function tryStreamerbotClientConnect(port, timeout = 2000) {
  */
 function onCustomMessage(message){
     try {
-        if(message?.type === "StreamerBotProxyGetActions"){
+        if(message?.data?.type === "StreamerBotProxyGetActions"){
             if (window.sbClient instanceof ProxyStreamerBotClient) {
-                window.sbClient._handleGetActionsResponse(message.actions || []);
+                // Refined JSON.parse error handling as suggested
+                try {
+                    const actions = JSON.parse(message?.data?.json || '[]');
+                    window.sbClient._handleGetActionsResponse(actions);
+                } catch (err) {
+                    console.error('Failed to parse actions JSON:', err);
+                    window.sbClient._handleGetActionsResponse([]);
+                }
             }
         } else {
             // Log unknown message types for debugging
@@ -585,6 +589,13 @@ class DiceDeckClient {
      * @returns {Promise<{status: string}>}
      */
     async doAction(params) { throw new Error('Not implemented'); }
+
+    /**
+     * Initializes the client. Should be overridden by subclasses.
+     * @returns {Promise<void>}
+     * @throws {Error} If not implemented in subclass.
+     */
+    async init() { throw new Error("Not implemented");}
 }
 
 /**
@@ -598,6 +609,17 @@ class DirectStreamerBotClient extends DiceDeckClient {
         super();
         this.client = client;
     }
+
+    /**
+     * Initializes the DirectStreamerBotClient.
+     * This implementation does nothing and resolves immediately.
+     * @returns {Promise<void>}
+     */
+    async init() {
+        console.log("Direct client is already connected");
+        return Promise.resolve();
+    }
+
     /**
      * Fetches available actions from the native client.
      * @returns {Promise<{status: string, actions: Array}>}
@@ -611,23 +633,43 @@ class DirectStreamerBotClient extends DiceDeckClient {
      * @returns {Promise<{status: string}>}
      */
     async doAction(params) {
-        console.debug('DirectStreamerBotClient.doAction:', params);
         return this.client.doAction(params);
     }
 }
 
+const remoteGetActions = "remoteGetActions"; 
+const remoteDoAction = "remoteDoAction"; 
 /**
  * Proxy client implementation using RPC via localClient.doAction and async responses.
  * Only one in-flight getActions is supported at a time.
  */
 class ProxyStreamerBotClient extends DiceDeckClient {
-    /**
-     * @param {Object} localClient - The local client used to send RPCs.
-     */
     constructor(localClient) {
         super();
         this.localClient = localClient;
         this._pendingGetActions = null; // {resolve, reject, timeoutId}
+        this.remoteGetActionsId = null;
+        this.remoteDoActionId = null;
+    }
+
+    /**
+     * Initializes the ProxyStreamerBotClient by fetching local actions and mapping remote action IDs.
+     * @returns {Promise<void>}
+     */
+    async init() {
+        try {
+            const localActions = await this.localClient.getActions();
+            this.remoteGetActionsId = localActions.actions.find(a => a.name === remoteGetActions)?.id;
+            this.remoteDoActionId = localActions.actions.find(a => a.name === remoteDoAction)?.id;
+            if (!this.remoteGetActionsId || !this.remoteDoActionId) {
+                const error = 'ProxyStreamerBotClient.init: Could not find remote action IDs.';
+                console.error(error);
+                throw new Error(error);
+            }
+        } catch (err) {
+            console.error('ProxyStreamerBotClient.init: Failed to fetch local actions:', err);
+            throw err;
+        }
     }
     /**
      * Fetches available actions via RPC. Resolves when the response is received.
@@ -637,6 +679,7 @@ class ProxyStreamerBotClient extends DiceDeckClient {
         if (this._pendingGetActions) {
             return Promise.reject(new Error('A getActions call is already pending'));
         }
+        
         return new Promise((resolve, reject) => {
             // Set up a timeout to avoid hanging forever
             const timeoutId = setTimeout(() => {
@@ -644,7 +687,7 @@ class ProxyStreamerBotClient extends DiceDeckClient {
                 reject(new Error('ProxyStreamerBotClient.getActions timed out'));
             }, 5000);
             this._pendingGetActions = { resolve, reject, timeoutId };
-            this.localClient.doAction({ name: 'remoteGetActions' });
+            this.localClient.doAction(this.remoteGetActionsId);
         });
     }
     /**
@@ -668,16 +711,20 @@ class ProxyStreamerBotClient extends DiceDeckClient {
         }
     }
     /**
-     * Triggers a remote action via RPC. No feedback is provided to the caller.
-     * @param {Object} params
-     * @returns {Promise<{status: string}>}
+     * Triggers a remote action via RPC. Handles errors and parameter passing.
+     * @param {Object|string} params - The remote action ID or parameter object.
+     * @returns {Promise<{status: string, error?: any}>}
      */
     async doAction(params) {
-        // NOTE: No feedback is provided to the caller for remoteDoAction.
-        // If you want to support async responses, implement a similar pattern as getActions.
-        console.warn('ProxyStreamerBotClient.doAction: No feedback is provided to the caller.');
-        this.localClient.doAction({ name: 'remoteDoAction' }, { remoteActionName: params.name });
-        return { status: 'ok' };
+        try {
+            // If params is just the action ID, wrap as expected by remote
+            const payload = typeof params === 'string' ? { remoteActionId: params } : params;
+            await this.localClient.doAction(this.remoteDoActionId, payload);
+            return { status: 'ok' };
+        } catch (err) {
+            console.error('ProxyStreamerBotClient.doAction: Failed to trigger remote action', err);
+            return { status: 'error', error: err };
+        }
     }
 }
 
@@ -689,13 +736,13 @@ class ProxyStreamerBotClient extends DiceDeckClient {
 function createDiceDeckClient(client) {
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.has('proxy')) {
+        console.log('Creating ProxyStreamerBotClient');
         return new ProxyStreamerBotClient(client);
     } else {
+        console.log('Creating DirectStreamerBotClient');
         return new DirectStreamerBotClient(client);
     }
 }
-
-let previousSbClient = null;
 
 /**
  * Sets up the Streamer.bot connection and assigns the client abstraction.
@@ -703,33 +750,25 @@ let previousSbClient = null;
  * @returns {Promise<void>}
  */
 async function setupStreamerBot(port) {
+    SetConnectionStatus(false);
     if (!window.StreamerbotClient) {
-        SetConnectionStatus(false);
         console.error('StreamerbotClient is not available: window.StreamerbotClient is undefined.');
         return Promise.reject('StreamerbotClient not available');
     }
     port = port || '8080';
-    // Disconnect previous client if setupStreamerBot is called multiple times
-    if (previousSbClient && previousSbClient.disconnect) {
-        try {
-            previousSbClient.disconnect();
-            console.warn('[DiceDeck] Disconnected previous Streamer.bot client.');
-        } catch (e) {
-            console.error('[DiceDeck] Error disconnecting previous Streamer.bot client:', e);
-        }
-    }
-    return tryStreamerbotClientConnect(port).then((client) => {
-        previousSbClient = client;
+    return tryStreamerbotClientConnect(port).then(async (client) => {
         window.sbClient = createDiceDeckClient(client);
+        console.log('window.sbClient assigned:', window.sbClient);
+        if (window.sbClient.init) {
+            console.log('About to call sbClient.init()');
+            await window.sbClient.init();
+        }
         // Fetch available actions immediately after connection
         if (window.sbClient.getActions) {
-            return window.sbClient.getActions().then(response => {
-                // Uncomment for debugging:
-                // if (window.DEBUG) console.log(response);
-                if (response && response.status === 'ok' && Array.isArray(response.actions)) {
-                    appState.availableActions = response.actions;
-                }
-            });
+            const response = await window.sbClient.getActions();
+            if (response && response.status === 'ok' && Array.isArray(response.actions)) {
+                appState.availableActions = response.actions;
+            }
         }
         return Promise.resolve(); // No actions to fetch
     }).then(() => {
@@ -1189,8 +1228,6 @@ if (debugImportBtn && debugImportModal && debugImportTextarea && debugImportCanc
             });
             // Best fit: calculate min grid size needed
             let maxRow = 0, maxCol = 0;
-            // Track used positions to resolve conflicts
-            const usedPositions = new Set();
             // First pass: mark all intended positions
             importButtons.forEach(btn => {
                 if (btn.row > maxRow) maxRow = btn.row;
