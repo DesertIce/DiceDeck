@@ -128,7 +128,7 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
         }
 
         const btn = e.currentTarget.__btnData;
-        // Use optional chaining for safer property access
+        // Use optional chaining for cleaner code
         if (window.sbClient?.doAction) {
             window.sbClient.doAction(btn.action_id).catch(err => {
                 console.error('Failed to trigger action:', btn.action_id, err);
@@ -170,8 +170,12 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
                     el.onmousedown = (e) => {
                         if (e.button === 1) {
                             e.preventDefault();
-                            if (window.sbClient && btn.action_id) {
-                                window.sbClient.doAction(btn.action_id);
+                            // Apply optional chaining consistently and add error handling
+                            if (window.sbClient?.doAction && btn.action_id) {
+                                window.sbClient.doAction(btn.action_id).catch(err => {
+                                    console.error('Failed to trigger action:', btn.action_id, err);
+                                    alert('Failed to trigger action: ' + btn.action_id);
+                                });
                             }
                         }
                     };
@@ -538,7 +542,14 @@ function onCustomMessage(message){
     try {
         if(message?.data?.type === "StreamerBotProxyGetActions"){
             if (window.sbClient instanceof ProxyStreamerBotClient) {
-                window.sbClient._handleGetActionsResponse(JSON.parse(message?.data?.json) || []);
+                // Refined JSON.parse error handling as suggested
+                try {
+                    const actions = JSON.parse(message?.data?.json || '[]');
+                    window.sbClient._handleGetActionsResponse(actions);
+                } catch (err) {
+                    console.error('Failed to parse actions JSON:', err);
+                    window.sbClient._handleGetActionsResponse([]);
+                }
             }
         } else {
             // Log unknown message types for debugging
@@ -657,6 +668,7 @@ class ProxyStreamerBotClient extends DiceDeckClient {
             }
         } catch (err) {
             console.error('ProxyStreamerBotClient.init: Failed to fetch local actions:', err);
+            throw err;
         }
     }
     /**
