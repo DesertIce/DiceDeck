@@ -1,7 +1,7 @@
 // Utility to fetch JSON data
 /**
- * Fetches the grid data from data.json and patches legacy action names.
- * @returns {Promise<Object>} The grid data object.
+ * Loads grid configuration from `data.json`, converting legacy button action names to action IDs if needed.
+ * @returns {Promise<Object>} Resolves to the parsed grid data object with patched button actions.
  */
 async function fetchGridData() {
     try {
@@ -24,8 +24,8 @@ async function fetchGridData() {
 
 // Status bar update
 /**
- * Updates the connection status bar in the UI.
- * @param {boolean} connected - Whether the app is connected to Streamer.bot.
+ * Sets the UI status bar to indicate whether the app is connected to Streamer.bot.
+ * Updates the status text and visual indicator based on the connection state.
  */
 function SetConnectionStatus(connected) {
     const bar = document.getElementById('status-text');
@@ -55,9 +55,10 @@ window.appState = appState;
 
 // Utility to map action_id to action name
 /**
- * Maps an action_id to its action name using appState.availableActions.
- * @param {string} action_id
- * @returns {string}
+ * Returns the action name corresponding to a given action ID from the available actions list.
+ * If the action ID is not found, returns an empty string.
+ * @param {string} action_id - The unique identifier of the action.
+ * @returns {string} The name of the action, or an empty string if not found.
  */
 function getActionNameById(action_id) {
     if (!appState.availableActions || !Array.isArray(appState.availableActions)) return '';
@@ -69,9 +70,10 @@ function getActionNameById(action_id) {
 }
 // Utility to map action name to action_id
 /**
- * Maps an action name to its action_id using appState.availableActions.
- * @param {string} action_name
- * @returns {string}
+ * Returns the action ID corresponding to a given action name from the available actions.
+ * If the action name is not found, returns an empty string and logs a warning.
+ * @param {string} action_name - The name of the action to look up.
+ * @returns {string} The action ID if found; otherwise, an empty string.
  */
 function getActionIdByName(action_name) {
     if (!appState.availableActions || !Array.isArray(appState.availableActions)) return '';
@@ -83,8 +85,17 @@ function getActionIdByName(action_name) {
 }
 
 /**
- * Renders the grid of buttons in the UI.
- * @param {Object} params - Grid parameters (rows, cols, buttons, gap, blurMin, blurMax)
+ * Renders the interactive grid of buttons and empty cells in the UI based on the provided layout and settings.
+ *
+ * Updates the grid container with button elements or empty cells for each position, applying edit mode features, drag-and-drop handlers, and unified action triggers. Also updates grid styling, blur parameters, and invokes icon rendering. Displays debug overlays if enabled.
+ * 
+ * @param {Object} params - Grid configuration.
+ * @param {number} params.rows - Number of grid rows.
+ * @param {number} params.cols - Number of grid columns.
+ * @param {Array} params.buttons - Array of button objects with position and metadata.
+ * @param {number} [params.gap] - Gap size between grid cells in pixels.
+ * @param {number} [params.blurMin] - Minimum blur value for grid animation.
+ * @param {number} [params.blurMax] - Maximum blur value for grid animation.
  */
 function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
     const grid = document.getElementById('grid-container');
@@ -115,7 +126,10 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
         btnMap[`${btn.row},${btn.col}`] = { ...btn, idx };
     });
 
-    // Unified handler for both click and touchend
+    /**
+     * Handles user interaction with a grid button, triggering the associated Streamer.bot action.
+     * Prevents duplicate action triggers on touch devices and displays an alert if the action fails to execute.
+     */
     function handleGridButtonAction(e) {
         // Prevent double-firing on touch devices
         if (e.type === 'touchend') {
@@ -262,14 +276,21 @@ function handleDragStart(e) {
     this.style.opacity = '0.4';
 }
 
+/**
+ * Handles the dragover event for grid cells, enabling drop by preventing default behavior and adding a visual indicator.
+ * @param {DragEvent} e - The dragover event object.
+ */
 function handleDragOver(e) {
     e.preventDefault();
     this.classList.add('drag-over');
 }
 
 /**
- * Handles the drop event for drag-and-drop grid editing.
- * @param {DragEvent} e
+ * Handles dropping a dragged button onto another button or empty cell in the grid, updating button positions and re-rendering the grid.
+ * 
+ * If dropped onto another button, swaps their positions. If dropped onto an empty cell, moves the dragged button to that cell. Marks the layout as having unsaved changes and updates the save button state.
+ * 
+ * @param {DragEvent} e - The drop event.
  */
 function handleDrop(e) {
     e.preventDefault();
@@ -316,12 +337,17 @@ function handleDragEnd(e) {
     this.style.outline = '';
 }
 
+/**
+ * Removes the visual drag-over indicator from a grid cell or button during a drag-and-drop operation.
+ */
 function handleDragLeave(e) {
     this.classList.remove('drag-over');
 }
 
 /**
- * Sets up the edit mode toggle and inline grid settings UI.
+ * Initializes the Edit Mode toggle functionality and inline grid settings UI, enabling users to switch between normal and edit modes, adjust grid dimensions, and export the current layout.
+ *
+ * When Edit Mode is activated, displays inline controls for modifying grid rows and columns with validation. Also fetches available actions from the connected Streamer.bot client if available. The Save Layout button allows exporting the current grid configuration as a JSON file.
  */
 function setupEditModeToggle() {
     const editBtn = document.getElementById('edit-toggle');
@@ -332,6 +358,11 @@ function setupEditModeToggle() {
         return;
     }
     let gridSettingsInline = document.getElementById('grid-settings-inline');
+    /**
+     * Updates the inline grid settings UI for editing grid rows and columns.
+     *
+     * Displays or hides the inline settings controls based on edit mode, synchronizes input values with the current grid configuration, and applies changes with validation. Marks unsaved changes and updates the grid when settings are applied.
+     */
     function updateInlineSettings() {
         if (appState.editMode) {
             document.body.classList.add('edit-mode');
@@ -458,7 +489,7 @@ function setupEditModeToggle() {
 }
 
 /**
- * Sets the state of the save button based on edit mode and unsaved changes.
+ * Updates the visibility and enabled state of the save layout button according to the current edit mode and whether there are unsaved changes.
  */
 function setSaveButtonState() {
     const saveBtn = document.getElementById('save-layout');
@@ -476,10 +507,12 @@ function setSaveButtonState() {
 }
 
 /**
- * Attempts to connect to Streamer.bot using the provided host and port.
- * @param {string} port
- * @param {number} timeout
- * @returns {Promise<Object>} The connected client instance.
+ * Attempts to establish a connection to a local Streamer.bot instance on the specified port.
+ * Resolves with the connected client instance if successful, or rejects with an error object if the connection times out, disconnects, or encounters an error during setup.
+ * If the `proxy` query parameter is present, attaches a custom message handler for proxy communication.
+ * @param {string} port - The port number to connect to.
+ * @param {number} [timeout=2000] - Connection timeout in milliseconds.
+ * @returns {Promise<Object>} Resolves with the connected Streamer.bot client instance.
  */
 async function tryStreamerbotClientConnect(port, timeout = 2000) {
     return new Promise((resolve, reject) => {
@@ -537,9 +570,9 @@ async function tryStreamerbotClientConnect(port, timeout = 2000) {
 }
 
 /**
- * Handles custom messages from the backend for proxy RPCs and other events.
- * Extend this to handle new message types as needed.
- * @param {Object} message
+ * Processes custom backend messages, specifically handling proxy RPC responses such as action lists for the Streamer.bot client.
+ * Logs a warning for unknown message types and errors encountered during processing.
+ * @param {Object} message - The message object received from the backend.
  */
 function onCustomMessage(message){
     try {
@@ -557,7 +590,11 @@ function onCustomMessage(message){
     }
 }
 
-// --- Query Param Helpers ---
+/**
+ * Retrieves the value of a query parameter from the current page URL.
+ * @param {string} name - The name of the query parameter to retrieve.
+ * @return {string|null} The value of the query parameter, or null if not present.
+ */
 function getQueryParam(name) {
     return new URLSearchParams(window.location.search).get(name);
 }
@@ -682,9 +719,9 @@ class ProxyStreamerBotClient extends DiceDeckClient {
 }
 
 /**
- * Creates the appropriate DiceDeck client based on query parameters.
+ * Returns a DiceDeck client instance, selecting either a proxy or direct implementation based on the presence of the 'proxy' query parameter in the URL.
  * @param {Object} client - The native Streamer.bot client instance.
- * @returns {DiceDeckClient}
+ * @returns {DiceDeckClient} A proxy or direct DiceDeck client.
  */
 function createDiceDeckClient(client) {
     const urlParams = new URLSearchParams(window.location.search);
@@ -698,9 +735,12 @@ function createDiceDeckClient(client) {
 let previousSbClient = null;
 
 /**
- * Sets up the Streamer.bot connection and assigns the client abstraction.
- * @param {string} port
- * @returns {Promise<void>}
+ * Initializes and connects to the Streamer.bot client, assigning the appropriate client abstraction to `window.sbClient`.
+ *
+ * Disconnects any previous client, attempts to establish a new connection on the specified port, fetches available actions, and updates the UI to reflect connection status.
+ *
+ * @param {string} port - The port to connect to Streamer.bot (defaults to '8080' if not provided).
+ * @returns {Promise<void>} Resolves when the connection is established and actions are fetched; rejects if the client is unavailable or the connection fails.
  */
 async function setupStreamerBot(port) {
     if (!window.StreamerbotClient) {
@@ -748,8 +788,11 @@ async function setupStreamerBot(port) {
 }
 
 /**
- * Opens the edit modal for a grid button.
- * @param {number} idx - The index of the button in appState.gridData.buttons.
+ * Opens a modal dialog to edit the properties of a grid button, allowing changes to its title, icon, and associated action, or removal of the button.
+ * 
+ * If the specified button index does not exist, the function logs an error and does nothing. Upon saving or removing, the grid is re-rendered and unsaved changes are marked.
+ * 
+ * @param {number} idx - The index of the button in the grid's button array to edit.
  */
 function openEditModal(idx) {
     const btn = appState.gridData.buttons[idx];
@@ -848,9 +891,14 @@ function openEditModal(idx) {
 }
 
 /**
- * Opens the add button modal for a specific grid cell.
- * @param {number} row
- * @param {number} col
+ * Opens a modal dialog to add a new button to the grid at the specified row and column.
+ *
+ * The modal allows the user to enter a title, optionally specify an icon, and select an action from the available actions.
+ * On confirmation, the new button is added to the grid, the UI is updated, and unsaved changes are marked.
+ * The modal also provides a live icon preview as the user types.
+ *
+ * @param {number} row - The row index where the new button will be placed.
+ * @param {number} col - The column index where the new button will be placed.
  */
 function openAddButtonModal(row, col) {
     if (!appState.gridData) {
@@ -927,7 +975,9 @@ function openAddButtonModal(row, col) {
 }
 
 /**
- * Opens the grid settings modal.
+ * Displays a modal dialog allowing the user to change the grid's row and column count.
+ *
+ * Updates the grid structure in `appState.gridData` and re-renders the grid upon saving. Changes are marked as unsaved and must be explicitly saved to persist. If the grid data is missing, the function logs an error and does nothing.
  */
 function openGridSettingsModal() {
     if (!appState.gridData) {
@@ -986,8 +1036,10 @@ let meshAnimationState = {
 };
 
 /**
- * Animates the polygonal mesh SVG background.
- * @param {boolean} force - If true, forces a redraw.
+ * Animates the SVG polygonal mesh background with dynamic, wavy motion and adaptive complexity based on frame timing.
+ * @param {boolean} force - If true, forces a redraw regardless of animation state or frame timing.
+ *
+ * The function updates the mesh's points and lines to create a fluid, animated effect. Mesh complexity (rows and columns) adjusts automatically for performance. If the SVG element is missing, a warning is logged and animation is skipped.
  */
 function animatePolygonalMesh(force) {
     if (noAnim) return;
@@ -1080,7 +1132,7 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
 }
 
 /**
- * Animates the grid blur effect.
+ * Continuously animates a blur and saturation effect on the grid container for a dynamic visual appearance.
  */
 function animateGridBlur() {
     if (noAnim) return;
@@ -1281,8 +1333,11 @@ if (getQueryParam('import') === null) {
 }
 
 /**
- * Imports a layout from an array of button objects.
- * @param {Array} layoutArray
+ * Imports and applies a new grid layout from an array of button objects.
+ * 
+ * The function sanitizes and normalizes button positions, compacts the grid to remove empty rows and columns, updates the grid configuration in `appState`, re-renders the grid, checks for empty leading rows or columns, and marks the layout as having unsaved changes.
+ * 
+ * @param {Array} layoutArray - Array of button objects to import into the grid.
  */
 function importLayout(layoutArray) {
     if (!appState.gridData) {
@@ -1325,9 +1380,9 @@ function importLayout(layoutArray) {
 }
 
 /**
- * Normalizes button positions so min row/col is 0, and fills from top-left.
- * @param {Array} buttons
- * @returns {Array}
+ * Adjusts all button positions so that the smallest row and column indices start at zero.
+ * @param {Array} buttons - Array of button objects with `row` and `col` properties.
+ * @returns {Array} The input array with button positions normalized to start from the top-left corner.
  */
 function normalizeButtons(buttons) {
     if (!Array.isArray(buttons) || buttons.length === 0) {
@@ -1347,10 +1402,10 @@ function normalizeButtons(buttons) {
     return buttons;
 }
 /**
- * Checks for gaps in the first row/col and shows a warning if found.
- * @param {Array} buttons
- * @param {number} rows
- * @param {number} cols
+ * Displays a warning if the first row or first column of the grid has no buttons.
+ * @param {Array} buttons - Array of button objects with `row` and `col` properties.
+ * @param {number} rows - Total number of grid rows.
+ * @param {number} cols - Total number of grid columns.
  */
 function checkGridGaps(buttons, rows, cols) {
     let firstRowEmpty = true, firstColEmpty = true;
@@ -1392,9 +1447,9 @@ function checkGridGaps(buttons, rows, cols) {
 }
 
 /**
- * Sanitizes a string for DOM insertion (basic).
- * @param {string} str
- * @returns {string}
+ * Escapes special HTML characters in a string to prevent HTML injection when inserting into the DOM.
+ * @param {string} str - The input string to sanitize.
+ * @returns {string} The sanitized string with special characters replaced by HTML entities.
  */
 function sanitizeString(str) {
     if (typeof str !== 'string') return '';
@@ -1404,9 +1459,9 @@ function sanitizeString(str) {
 }
 
 /**
- * Sanitizes all imported button fields.
- * @param {Object} btn
- * @returns {Object}
+ * Returns a sanitized and normalized button object with validated row and column indices and escaped string fields.
+ * @param {Object} btn - The button object to sanitize.
+ * @returns {Object} A new button object with safe and normalized properties.
  */
 function sanitizeButton(btn) {
     return {
