@@ -49,17 +49,30 @@ window.appState = appState;
 function getActionNameById(action_id) {
     if (!appState.availableActions || !Array.isArray(appState.availableActions)) return '';
     const found = appState.availableActions.find(a => a.id === action_id);
+    if (!found) {
+        console.warn(`getActionNameById: Action name not found for id: ${action_id}`);
+    }
     return found ? found.name : '';
 }
 // Utility to map action name to action_id
 function getActionIdByName(action_name) {
     if (!appState.availableActions || !Array.isArray(appState.availableActions)) return '';
     const found = appState.availableActions.find(a => a.name === action_name);
+    if (!found) {
+        console.warn(`getActionIdByName: Action id not found for name: ${action_name}`);
+    }
     return found ? found.id : '';
 }
 
 function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
     const grid = document.getElementById('grid-container');
+    if (!grid) {
+        console.error('renderGrid: Grid container not found in DOM');
+        return;
+    }
+    if (!Array.isArray(buttons)) {
+        console.warn('renderGrid: buttons is not an array', buttons);
+    }
     grid.innerHTML = '';
     // Set CSS variables for grid sizing
     grid.style.setProperty('--grid-rows', rows);
@@ -215,10 +228,16 @@ function handleDrop(e) {
     const targetIdx = this.dataset.idx;
     const targetRow = parseInt(this.dataset.row, 10);
     const targetCol = parseInt(this.dataset.col, 10);
+    if (dragSrcIdx === null) {
+        console.warn('handleDrop: dragSrcIdx is null');
+    }
     if (dragSrcIdx !== null) {
         if (typeof targetIdx !== 'undefined') {
             // Swap with another button
             if (dragSrcIdx !== targetIdx) {
+                if (!appState.gridData.buttons[dragSrcIdx] || !appState.gridData.buttons[targetIdx]) {
+                    console.warn('handleDrop: Invalid button indices', dragSrcIdx, targetIdx);
+                }
                 const temp = { ...appState.gridData.buttons[dragSrcIdx] };
                 appState.gridData.buttons[dragSrcIdx].row = appState.gridData.buttons[targetIdx].row;
                 appState.gridData.buttons[dragSrcIdx].col = appState.gridData.buttons[targetIdx].col;
@@ -230,6 +249,9 @@ function handleDrop(e) {
             }
         } else {
             // Move to empty cell
+            if (!appState.gridData.buttons[dragSrcIdx]) {
+                console.warn('handleDrop: Invalid dragSrcIdx for empty cell', dragSrcIdx);
+            }
             appState.gridData.buttons[dragSrcIdx].row = targetRow;
             appState.gridData.buttons[dragSrcIdx].col = targetCol;
             appState.unsavedChanges = true;
@@ -253,6 +275,10 @@ function setupEditModeToggle() {
     const editBtn = document.getElementById('edit-toggle');
     const saveBtn = document.getElementById('save-layout');
     const statusBarButtons = document.querySelector('.status-bar-buttons');
+    if (!editBtn || !saveBtn || !statusBarButtons) {
+        console.error('setupEditModeToggle: Required DOM elements missing', { editBtn, saveBtn, statusBarButtons });
+        return;
+    }
     let gridSettingsInline = document.getElementById('grid-settings-inline');
     function updateInlineSettings() {
         if (appState.editMode) {
@@ -339,6 +365,7 @@ function setupEditModeToggle() {
             try {
                 const response = await window.sbClient.getActions();
                 if (response && response.status === 'ok' && Array.isArray(response.actions)) {
+                    console.log(response.actions);
                     appState.availableActions = response.actions;
                 }
             } catch (e) {
@@ -380,7 +407,10 @@ function setupEditModeToggle() {
 // Move setSaveButtonState to top level
 function setSaveButtonState() {
     const saveBtn = document.getElementById('save-layout');
-    if (!saveBtn) return;
+    if (!saveBtn) {
+        console.warn('setSaveButtonState: Save button not found');
+        return;
+    }
     if (appState.editMode) {
         saveBtn.style.display = 'inline-block';
         saveBtn.disabled = !appState.unsavedChanges;
@@ -388,15 +418,6 @@ function setSaveButtonState() {
     } else {
         saveBtn.style.display = 'none';
     }
-}
-
-// Utility to determine WebSocket protocol
-function getWebSocketProtocol() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const wsParam = urlParams.get('ws');
-    if (wsParam === 'ws') return 'ws';
-    if (wsParam === 'wss') return 'wss';
-    return window.location.protocol === 'https:' ? 'wss' : 'ws';
 }
 
 // Utility to get password from query param
@@ -421,7 +442,6 @@ async function tryStreamerbotClientConnect(host, port, timeout = 2000) {
             client = new window.StreamerbotClient({
                 host,
                 port,
-                scheme: getWebSocketProtocol(),
                 password: getStreamerbotPassword(),
                 onConnect: async (info) => {
                     clearTimeout(timer);
@@ -446,6 +466,8 @@ async function tryStreamerbotClientConnect(host, port, timeout = 2000) {
                     }
                 }
             });
+
+            client.on("General.Custom", onCustomMessage)
         } catch (e) {
             clearTimeout(timer);
             if (!resolved) {
@@ -456,29 +478,17 @@ async function tryStreamerbotClientConnect(host, port, timeout = 2000) {
     });
 }
 
-function resolveHostToIP(host, port, callback) {
-    // Try to fetch with port (HEAD)
-    fetch(`http://${host}:${port}/`, { method: 'HEAD', mode: 'no-cors' })
-        .then(() => callback(host))
-        .catch(() => {
-            // Try to fetch without port (HEAD)
-            fetch(`http://${host}/`, { method: 'HEAD', mode: 'no-cors' })
-                .then(() => callback(host))
-                .catch(() => {
-                    // Try to fetch with port (GET)
-                    fetch(`http://${host}:${port}/`, { method: 'GET', mode: 'no-cors' })
-                        .then(() => callback(host))
-                        .catch(() => {
-                            // Try to fetch without port (GET)
-                            fetch(`http://${host}/`, { method: 'GET', mode: 'no-cors' })
-                                .then(() => callback(host))
-                                .catch(() => callback(null));
-                        });
-                });
-        });
+function onCustomMessage(message){
+    try {
+        if(message?.type === "StreamerBotProxyGetActions"){
+            //const remoteJson = 
+        }
+    }
+    catch (e) {
+        console.error(e);
+    }
 }
 
-// --- Parallel LAN Discovery with Web Workers ---
 // --- Query Param Helpers ---
 function getQueryParam(name) {
     return new URLSearchParams(window.location.search).get(name);
@@ -489,141 +499,6 @@ let meshRows = 13, meshCols = 22;
 if (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) { meshRows = 7; meshCols = 12; }
 if (navigator.deviceMemory && navigator.deviceMemory <= 4) { meshRows = 7; meshCols = 12; }
 const noAnim = getQueryParam('noanim') !== null;
-
-// --- Adaptive LAN Scan Concurrency ---
-let SB_DISCOVERY_WORKER_COUNT = 5;
-let MAX_CONCURRENT_PROBES = 20;
-const qpConcurrency = parseInt(getQueryParam('concurrency'), 10);
-const qpWorkers = parseInt(getQueryParam('workers'), 10);
-const qpProbes = parseInt(getQueryParam('probes'), 10);
-if (!isNaN(qpConcurrency) && qpConcurrency > 0) {
-    // Try to split evenly between workers/probes
-    SB_DISCOVERY_WORKER_COUNT = Math.max(1, Math.floor(Math.sqrt(qpConcurrency)));
-    MAX_CONCURRENT_PROBES = Math.max(1, Math.ceil(qpConcurrency / SB_DISCOVERY_WORKER_COUNT));
-}
-if (!isNaN(qpWorkers) && qpWorkers > 0) SB_DISCOVERY_WORKER_COUNT = qpWorkers;
-if (!isNaN(qpProbes) && qpProbes > 0) MAX_CONCURRENT_PROBES = qpProbes;
-
-// Patch global for worker
-window.SB_DISCOVERY_WORKER_COUNT = SB_DISCOVERY_WORKER_COUNT;
-window.MAX_CONCURRENT_PROBES = MAX_CONCURRENT_PROBES;
-
-// --- Patch worker creation to use adaptive concurrency ---
-const SB_DISCOVERY_WORKER_URL = 'sb-discovery-worker.js';
-// SB_DISCOVERY_WORKER_COUNT is now set above
-
-// This function is no longer used as LAN scan is handled by lan-scan.js
-// async function discoverStreamerBotOnLAN() {
-//     // Scan most common residential subnets first, then the rest
-//     const subnets = [];
-//     // 1. Most common: 192.168.1.x
-//     subnets.push('192.168.1');
-//     // 2. Next most common: 192.168.0.x
-//     subnets.push('192.168.0');
-//     // 3. Also common: 10.0.0.x
-//     subnets.push('10.0.0');
-//     // 4. All other 192.168.x.x (excluding .0 and .1)
-//     for (let i = 2; i <= 255; i++) {
-//         subnets.push(`192.168.${i}`);
-//     }
-//     // 5. 172.16.x.x through 172.31.x.x
-//     for (let i = 16; i <= 31; i++) {
-//         subnets.push(`172.${i}.0`);
-//     }
-//     const port = '8080';
-//     const hosts = [];
-//     for (const subnet of subnets) {
-//         for (let i = 1; i <= 254; i++) {
-//             hosts.push(`${subnet}.${i}`);
-//         }
-//     }
-//     // Remove all test/dummy IPs from LAN scan logic
-//     // Remove: for (let i = 1; i <= 78; i++) { hosts.push(`192.0.2.${i}`); }
-//     // Split hosts into chunks for workers
-//     const chunkSize = Math.ceil(hosts.length / SB_DISCOVERY_WORKER_COUNT);
-//     let found = false;
-//     let completedWorkers = 0;
-//     let totalProbed = 0;
-//     let totalToProbe = hosts.length;
-//     let workers = [];
-//     function stopAllWorkers() {
-//         workers.forEach(w => w.terminate());
-//         workers = [];
-//     }
-//     const discoveryNote = '<br><small style="color:#aaa">Note: You may see many connection errors in your browser console during scanning. This is normal and expected.<br><br>Tip: Discovery is only needed if the server IP address changes or is lost. If you already know the IP and port of your Streamer.bot server, you can skip scanning by adding them to the URL as query parameters.<br>For example: <code>?address=192.168.1.100&port=8080</code> or <code>?host=streamerbot.local</code> (host can be a hostname, mDNS, or DNS name).</small>';
-//     showDiscoveryOverlay('Scanning LAN for Streamer.bot...' + discoveryNote, 0);
-//     const workerDelay = 200; // ms delay between worker spawns
-//     for (let w = 0; w < SB_DISCOVERY_WORKER_COUNT; w++) {
-//         setTimeout(() => {
-//             const chunk = hosts.slice(w * chunkSize, (w + 1) * chunkSize);
-//             if (chunk.length === 0) return;
-//             const worker = new Worker(SB_DISCOVERY_WORKER_URL);
-//             workers.push(worker);
-//             worker.postMessage({ ips: chunk, port });
-//             worker.onmessage = async (e) => {
-//                 if (e.data.log) {
-//                     console.log(`[LANScan] ${e.data.log}`);
-//                 }
-//                 if (found) return;
-//                 if (e.data.progress) {
-//                     totalProbed += e.data.progress;
-//                     showDiscoveryOverlay(`Scanning LAN for Streamer.bot... (${totalProbed}/${totalToProbe})` + discoveryNote, totalProbed / totalToProbe);
-//                 }
-//                 if (e.data.ip) {
-//                     // Escalate to StreamerbotClient handshake
-//                     const isTargetIP = e.data.ip === '192.168.50.32';
-//                     if (isTargetIP) {
-//                         console.info(`[LANScan][DETAIL] Attempting handshake with ${e.data.ip}:${port}`);
-//                     }
-//                     try {
-//                         const info = await tryStreamerbotClientConnect(e.data.ip, port, 1200);
-//                         if (isTargetIP) {
-//                             console.info(`[LANScan][DETAIL] Handshake success for ${e.data.ip}:${port}`);
-//                             console.info(`[LANScan][DETAIL] Handshake info:`, info);
-//                         }
-//                         found = true;
-//                         stopAllWorkers();
-//                         showDiscoveryOverlay(`Found Streamer.bot at ${e.data.ip}:${port}. Connect?`, 1, true,
-//                             () => {
-//                                 localStorage.setItem('sbServerAddress', e.data.ip);
-//                                 localStorage.setItem('sbServerPort', port);
-//                                 hideDiscoveryOverlay();
-//                                 setupStreamerBot(e.data.ip, port);
-//                             },
-//                             () => {
-//                                 found = false;
-//                                 discoverStreamerBotOnLAN();
-//                             }
-//                         );
-//                     } catch (err) {
-//                         // Not a valid Streamer.bot instance, keep going
-//                         if (err && err.host && err.port && err.reason) {
-//                             if (isTargetIP) {
-//                                 console.warn(`[LANScan][DETAIL] Failed to connect to ${err.host}:${err.port} - ${err.reason}`);
-//                                 if (err && err.stack) {
-//                                     console.warn(`[LANScan][DETAIL] Stack:`, err.stack);
-//                                 }
-//                             } else {
-//                                 // Only log disconnects and errors for other IPs
-//                                 if (err.reason !== 'timeout' && !"Timeout" in err.toString()) {
-//                                     console.warn(`[LANScan] Failed to connect to ${err.host}:${err.port} - ${err.reason}`);
-//                                 }
-//                             }
-//                         }
-//                     }
-//                 }
-//                 if (e.data.done) {
-//                     completedWorkers++;
-//                     // Do not increment totalProbed here, as it's now updated per-IP
-//                     if (completedWorkers === workers.length && !found) {
-//                         showDiscoveryOverlay('No Streamer.bot server found on your LAN. Please check your network or enter the address manually.', 1, false);
-//                         setTimeout(hideDiscoveryOverlay, 4000);
-//                     }
-//                 }
-//             };
-//         }, w * workerDelay);
-//     }
-// }
 
 // Patch setupStreamerBot to accept address/port
 function setupStreamerBot(address, port) {
@@ -646,6 +521,7 @@ function setupStreamerBot(address, port) {
         if (client.getActions) {
             return client.getActions().then(response => {
                 if (response && response.status === 'ok' && Array.isArray(response.actions)) {
+                    console.debug(response.action);
                     appState.availableActions = response.actions;
                 }
             });
@@ -677,6 +553,10 @@ function setupStreamerBot(address, port) {
 
 function openEditModal(idx) {
     const btn = appState.gridData.buttons[idx];
+    if (!btn) {
+        console.error('openEditModal: Button not found at idx', idx);
+        return;
+    }
     // Modal backdrop
     const backdrop = document.createElement('div');
     backdrop.className = 'edit-modal-backdrop';
@@ -768,6 +648,10 @@ function openEditModal(idx) {
 }
 
 function openAddButtonModal(row, col) {
+    if (!appState.gridData) {
+        console.error('openAddButtonModal: appState.gridData is missing');
+        return;
+    }
     // Modal backdrop
     const backdrop = document.createElement('div');
     backdrop.className = 'edit-modal-backdrop';
@@ -838,6 +722,10 @@ function openAddButtonModal(row, col) {
 }
 
 function openGridSettingsModal() {
+    if (!appState.gridData) {
+        console.error('openGridSettingsModal: appState.gridData is missing');
+        return;
+    }
     // Modal backdrop
     const backdrop = document.createElement('div');
     backdrop.className = 'edit-modal-backdrop';
@@ -895,7 +783,10 @@ function animatePolygonalMesh(force) {
         meshAnimationState.svg = document.getElementById('bg-mesh');
     }
     const svg = meshAnimationState.svg;
-    if (!svg) return;
+    if (!svg) {
+        console.warn('animatePolygonalMesh: SVG element not found');
+        return;
+    }
     if (!meshAnimationState.running && !force) return;
     // 24fps throttle
     const now = performance.now();
@@ -1116,6 +1007,7 @@ if (debugImportBtn && debugImportModal && debugImportTextarea && debugImportCanc
         try {
             json = JSON.parse(debugImportTextarea.value);
         } catch (e) {
+            console.error('Debug Import: Invalid JSON', e);
             alert('Invalid JSON!');
             return;
         }
@@ -1205,12 +1097,14 @@ if (debugImportBtn && debugImportModal && debugImportTextarea && debugImportCanc
             }));
         }
         if (!importButtons || !Array.isArray(importButtons) || importButtons.length === 0) {
+            console.warn('Debug Import: Could not find any buttons to import in the provided JSON.', json);
             alert('Could not find any buttons to import in the provided JSON.');
             return;
         }
         // Validate all have action_id and title
         const valid = importButtons.every(item => item.action_id && item.title);
         if (!valid) {
+            console.warn('Debug Import: Each imported button must have action_id and title.', importButtons);
             alert('Each imported button must have action_id and title.');
             return;
         }
@@ -1228,7 +1122,14 @@ if (getQueryParam('import') === null) {
 
 // Function to import layout from JSON (array of {action_id, title})
 function importLayout(layoutArray) {
-    if (!appState.gridData) return;
+    if (!appState.gridData) {
+        console.error('importLayout: appState.gridData is missing');
+        return;
+    }
+    if (!Array.isArray(layoutArray)) {
+        console.warn('importLayout: layoutArray is not an array', layoutArray);
+        return;
+    }
     // Normalize button positions
     let normalized = normalizeButtons(layoutArray.map(sanitizeButton));
     // Compact: remove empty trailing columns and rows
@@ -1262,7 +1163,10 @@ function importLayout(layoutArray) {
 
 // Utility: Normalize button positions so min row/col is 0, and fill from top-left
 function normalizeButtons(buttons) {
-    if (!Array.isArray(buttons) || buttons.length === 0) return buttons;
+    if (!Array.isArray(buttons) || buttons.length === 0) {
+        console.warn('normalizeButtons: buttons is not a non-empty array', buttons);
+        return buttons;
+    }
     // Find min row/col
     let minRow = Math.min(...buttons.map(b => b.row));
     let minCol = Math.min(...buttons.map(b => b.col));
@@ -1343,24 +1247,3 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
     }
 });
-
-// Show insecure WebSocket warning if needed
-if (window.location.protocol === 'https:' && getWebSocketProtocol() === 'ws') {
-    const warning = document.createElement('div');
-    warning.id = 'ws-warning';
-    warning.style.position = 'fixed';
-    warning.style.top = '0';
-    warning.style.left = '0';
-    warning.style.width = '100vw';
-    warning.style.zIndex = '9999';
-    warning.style.background = '#ffcc00';
-    warning.style.color = '#222';
-    warning.style.fontWeight = 'bold';
-    warning.style.textAlign = 'center';
-    warning.style.padding = '10px 0';
-    warning.style.boxShadow = '0 2px 8px #0003';
-    warning.innerHTML =
-        '⚠️ You are using an insecure WebSocket connection (<code>ws://</code>) on a secure page (<code>https://</code>). ' +
-        '<button style="margin-left:16px;" onclick="this.parentNode.style.display=\'none\'">Dismiss</button>';
-    document.body.appendChild(warning);
-}
