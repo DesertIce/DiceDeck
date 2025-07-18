@@ -72,6 +72,7 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
     }
     if (!Array.isArray(buttons)) {
         console.warn('renderGrid: buttons is not an array', buttons);
+        return;
     }
     grid.innerHTML = '';
     // Set CSS variables for grid sizing
@@ -365,7 +366,8 @@ function setupEditModeToggle() {
             try {
                 const response = await window.sbClient.getActions();
                 if (response && response.status === 'ok' && Array.isArray(response.actions)) {
-                    console.log(response.actions);
+                    // Uncomment for debugging:
+                    // if (window.DEBUG) console.log(response.actions);
                     appState.availableActions = response.actions;
                 }
             } catch (e) {
@@ -478,10 +480,19 @@ async function tryStreamerbotClientConnect(host, port, timeout = 2000) {
     });
 }
 
+/**
+ * Handles custom messages from the backend for proxy RPCs and other events.
+ * Extend this to handle new message types as needed.
+ */
 function onCustomMessage(message){
     try {
         if(message?.type === "StreamerBotProxyGetActions"){
-            //const remoteJson = 
+            if (window.sbClient instanceof ProxyStreamerBotClient) {
+                window.sbClient._handleGetActionsResponse(message.actions || []);
+            }
+        } else {
+            // Log unknown message types for debugging
+            console.warn('onCustomMessage: Unknown message type', message?.type, message);
         }
     }
     catch (e) {
@@ -500,47 +511,102 @@ if (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) { meshR
 if (navigator.deviceMemory && navigator.deviceMemory <= 4) { meshRows = 7; meshCols = 12; }
 const noAnim = getQueryParam('noanim') !== null;
 
+// --- DiceDeckClient Abstraction ---
+class DiceDeckClient {
+    async getActions() { throw new Error('Not implemented'); }
+    async doAction(params) { throw new Error('Not implemented'); }
+}
+
+class DirectStreamerBotClient extends DiceDeckClient {
+    constructor(client) {
+        super();
+        this.client = client;
+    }
+    async getActions() {
+        return this.client.getActions();
+    }
+    async doAction(params) {
+        return this.client.doAction(params);
+    }
+}
+
+class ProxyStreamerBotClient extends DiceDeckClient {
+    /**
+     * ProxyStreamerBotClient uses RPC via localClient.doAction and expects async responses
+     * to be delivered via onCustomMessage. Only one in-flight getActions is supported.
+     */
+    constructor(localClient) {
+        super();
+        this.localClient = localClient;
+        this._pendingGetActions = null; // {resolve, reject, timeoutId}
+    }
+    async getActions() {
+        if (this._pendingGetActions) {
+            return Promise.reject(new Error('A getActions call is already pending'));
+        }
+        return new Promise((resolve, reject) => {
+            // Set up a timeout to avoid hanging forever
+            const timeoutId = setTimeout(() => {
+                this._pendingGetActions = null;
+                reject(new Error('ProxyStreamerBotClient.getActions timed out'));
+            }, 5000);
+            this._pendingGetActions = { resolve, reject, timeoutId };
+            this.localClient.doAction({ name: 'remoteGetActions' });
+        });
+    }
+    /**
+     * Called by onCustomMessage when the remote actions response arrives.
+     * Maps [{Item1, Item2}] to [{id, name}].
+     */
+    _handleGetActionsResponse(actions) {
+        if (this._pendingGetActions) {
+            clearTimeout(this._pendingGetActions.timeoutId);
+            // Map [{Item1, Item2}] to [{id, name}]
+            const mapped = Array.isArray(actions)
+                ? actions.map(a => ({ id: a.Item1, name: a.Item2 }))
+                : [];
+            this._pendingGetActions.resolve({ status: 'ok', actions: mapped });
+            this._pendingGetActions = null;
+        }
+    }
+    async doAction(params) {
+        // NOTE: No feedback is provided to the caller for remoteDoAction.
+        // If you want to support async responses, implement a similar pattern as getActions.
+        console.warn('ProxyStreamerBotClient.doAction: No feedback is provided to the caller.');
+        this.localClient.doAction({ name: 'remoteDoAction' }, { remoteActionName: params.name });
+        return { status: 'ok' };
+    }
+}
+
+function createDiceDeckClient(client) {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('proxy')) {
+        return new ProxyStreamerBotClient(client);
+    } else {
+        return new DirectStreamerBotClient(client);
+    }
+}
+
 // Patch setupStreamerBot to accept address/port
 function setupStreamerBot(address, port) {
     if (!window.StreamerbotClient) {
         SetConnectionStatus(false);
         return Promise.reject('StreamerbotClient not available');
     }
-    const urlParams = new URLSearchParams(window.location.search);
-    const paramAddress = urlParams.get('address');
-    const paramPort = urlParams.get('port');
-    address = address || localStorage.getItem('sbServerAddress') || paramAddress || '127.0.0.1';
-    port = port || localStorage.getItem('sbServerPort') || paramPort || '8080';
-    if (paramAddress || paramPort) {
-        console.log(`[DiceDeck] Using Streamer.bot address from query params: ${address}:${port}`);
-    }
-    const storedInstanceId = localStorage.getItem('sbInstanceId');
+    address = address || localStorage.getItem('sbServerAddress') || '127.0.0.1';
+    port = port || localStorage.getItem('sbServerPort') || '8080';
+    // Remove all logic related to sbInstanceId
     return tryStreamerbotClientConnect(address, port).then((client) => {
-        window.sbClient = client;
+        window.sbClient = createDiceDeckClient(client);
         // Fetch available actions immediately after connection
-        if (client.getActions) {
-            return client.getActions().then(response => {
+        if (window.sbClient.getActions) {
+            return window.sbClient.getActions().then(response => {
                 if (response && response.status === 'ok' && Array.isArray(response.actions)) {
-                    console.debug(response.action);
                     appState.availableActions = response.actions;
                 }
             });
         }
         return Promise.resolve(); // No actions to fetch
-    }).then(() => {
-        // Confirm instanceId if previously stored
-        if (storedInstanceId) {
-            return (client.getHostInfo ? client.getHostInfo() : Promise.resolve()).then(hostInfo => {
-                if (hostInfo && hostInfo.instanceId === storedInstanceId) {
-                    console.log(`[DiceDeck] Confirmed reconnection to previously confirmed Streamer.bot instance: ${hostInfo.instanceId}`);
-                } else {
-                    console.warn(`[DiceDeck] Connected to a different Streamer.bot instance! Expected: ${storedInstanceId}, Got: ${hostInfo && hostInfo.instanceId}`);
-                    // This part of the logic is now handled by lan-scan.js, so we just log and let it handle the overlay
-                    console.log('[DiceDeck] User accepted new Streamer.bot instance.');
-                }
-            });
-        }
-        return Promise.resolve(); // No instanceId to confirm
     }).then(() => {
         SetConnectionStatus(true);
         return Promise.resolve();
