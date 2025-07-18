@@ -172,7 +172,7 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
                     el.onmousedown = (e) => {
                         if (e.button === 1) {
                             e.preventDefault();
-                            if (window.sbClient && window.sbClient.socket && window.sbClient.socket.readyState === 1 && actionName) {
+                            if (window.sbClient && btn.action_id) {
                                 window.sbClient.doAction(btn.action_id);
                             }
                         }
@@ -701,13 +701,20 @@ class ProxyStreamerBotClient extends DiceDeckClient {
         }
     }
     /**
-     * Triggers a remote action via RPC. No feedback is provided to the caller.
-     * @param {Object} params
-     * @returns {Promise<{status: string}>}
+     * Triggers a remote action via RPC. Handles errors and parameter passing.
+     * @param {Object|string} params - The remote action ID or parameter object.
+     * @returns {Promise<{status: string, error?: any}>}
      */
     async doAction(params) {
-        this.localClient.doAction(this.remoteDoActionId, { remoteActionId: params });
-        return { status: 'ok' };
+        try {
+            // If params is just the action ID, wrap as expected by remote
+            const payload = typeof params === 'string' ? { remoteActionId: params } : params;
+            await this.localClient.doAction(this.remoteDoActionId, payload);
+            return { status: 'ok' };
+        } catch (err) {
+            console.error('ProxyStreamerBotClient.doAction: Failed to trigger remote action', err);
+            return { status: 'error', error: err };
+        }
     }
 }
 
@@ -748,13 +755,10 @@ async function setupStreamerBot(port) {
         }
         // Fetch available actions immediately after connection
         if (window.sbClient.getActions) {
-            return window.sbClient.getActions().then(response => {
-                // Uncomment for debugging:
-                // if (window.DEBUG) console.log(response);
-                if (response && response.status === 'ok' && Array.isArray(response.actions)) {
-                    appState.availableActions = response.actions;
-                }
-            });
+            const response = await window.sbClient.getActions();
+            if (response && response.status === 'ok' && Array.isArray(response.actions)) {
+                appState.availableActions = response.actions;
+            }
         }
         return Promise.resolve(); // No actions to fetch
     }).then(() => {
