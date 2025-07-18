@@ -653,7 +653,9 @@ class ProxyStreamerBotClient extends DiceDeckClient {
             this.remoteGetActionsId = localActions.actions.find(a => a.name === remoteGetActions)?.id;
             this.remoteDoActionId = localActions.actions.find(a => a.name === remoteDoAction)?.id;
             if (!this.remoteGetActionsId || !this.remoteDoActionId) {
-                console.error('ProxyStreamerBotClient.init: Could not find remote action IDs.');
+                const error = 'ProxyStreamerBotClient.init: Could not find remote action IDs.';
+                console.error(error);
+                throw new Error(error);
             }
         } catch (err) {
             console.error('ProxyStreamerBotClient.init: Failed to fetch local actions:', err);
