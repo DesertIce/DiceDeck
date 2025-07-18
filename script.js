@@ -128,10 +128,8 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
         }
 
         const btn = e.currentTarget.__btnData;
-        if (
-            window.sbClient &&
-            window.sbClient.doAction 
-        ) {
+        // Use optional chaining for safer property access
+        if (window.sbClient?.doAction) {
             window.sbClient.doAction(btn.action_id).catch(err => {
                 console.error('Failed to trigger action:', btn.action_id, err);
                 alert('Failed to trigger action: ' + btn.action_id);
