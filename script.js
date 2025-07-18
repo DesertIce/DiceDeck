@@ -107,8 +107,40 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
     // Create a map for quick lookup
     const btnMap = {};
     buttons.forEach((btn, idx) => {
+        // Log and skip out-of-bounds buttons
+        if (btn.row < 0 || btn.row >= rows || btn.col < 0 || btn.col >= cols) {
+            console.warn(`renderGrid: Button at idx ${idx} has out-of-bounds row/col:`, btn);
+            return;
+        }
         btnMap[`${btn.row},${btn.col}`] = { ...btn, idx };
     });
+
+    // Unified handler for both click and touchend
+    function handleGridButtonAction(e) {
+        // Prevent double-firing on touch devices
+        if (e.type === 'touchend') {
+            e.preventDefault();
+            e.target.__handledTouch = true;
+        }
+        if (e.type === 'click' && e.target.__handledTouch) {
+            e.target.__handledTouch = false;
+            return;
+        }
+
+        const btn = e.currentTarget.__btnData;
+        if (
+            window.sbClient &&
+            window.sbClient.client &&
+            window.sbClient.client.doAction &&
+            window.sbClient.client.socket &&
+            window.sbClient.client.socket.readyState === 1 
+        ) {
+            window.sbClient.doAction(btn.action_id).catch(err => {
+                console.error('Failed to trigger action:', btn.action_id, err);
+                alert('Failed to trigger action: ' + btn.action_id);
+            });
+        }
+    }
 
     for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
@@ -156,22 +188,13 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
                     el.ondrop = null;
                     el.ondragend = null;
                     el.ondragleave = null;
-                    el.onclick = async (e) => {
-                        const actionName = btn.action_id ? getActionNameById(btn.action_id) : (btn.action || '');
-                        if (
-                            window.sbClient &&
-                            window.sbClient.socket &&
-                            window.sbClient.socket.readyState === 1 &&
-                            actionName
-                        ) {
-                            try {
-                                await window.sbClient.doAction({ name: actionName });
-                            } catch (err) {
-                                alert('Failed to trigger action: ' + actionName);
-                            }
-                        }
-                    };
-                    el.ontouchend = el.onclick;
+                    // Remove old handlers
+                    el.onclick = null;
+                    el.ontouchend = null;
+                    // Attach unified handler
+                    el.__btnData = btn;
+                    el.addEventListener('click', handleGridButtonAction, false);
+                    el.addEventListener('touchend', handleGridButtonAction, false);
                 }
                 // Debug overlay
                 if (gridDebugOverlay) {
@@ -452,65 +475,62 @@ function setSaveButtonState() {
     }
 }
 
-// Utility to get password from query param
-function getStreamerbotPassword() {
-    const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.get('password') || undefined;
-}
-
 /**
  * Attempts to connect to Streamer.bot using the provided host and port.
- * @param {string} host
  * @param {string} port
  * @param {number} timeout
  * @returns {Promise<Object>} The connected client instance.
  */
-async function tryStreamerbotClientConnect(host, port, timeout = 2000) {
+async function tryStreamerbotClientConnect(port, timeout = 2000) {
     return new Promise((resolve, reject) => {
         let resolved = false;
         let timer = setTimeout(() => {
             if (!resolved) {
                 resolved = true;
                 if (client && client.disconnect) client.disconnect();
-                reject({ reason: 'timeout', host, port });
+                console.error(`[DiceDeck] Streamer.bot connection timed out (port: ${port})`);
+                reject({ reason: 'timeout', port });
             }
         }, timeout);
         let client;
         try {
             client = new window.StreamerbotClient({
-                host,
+                host: "127.0.0.1",
                 port,
-                password: getStreamerbotPassword(),
                 onConnect: async (info) => {
+                    SetConnectionStatus(true);
                     clearTimeout(timer);
                     if (!resolved) {
                         resolved = true;
-                        // Do not disconnect here; keep the client alive
                         resolve(client); // Return the client instance
                     }
                 },
                 onDisconnect: () => {
+                    SetConnectionStatus(false);
                     if (!resolved) {
                         clearTimeout(timer);
                         resolved = true;
-                        reject({ reason: 'disconnect', host, port });
+                        console.error(`[DiceDeck] Streamer.bot disconnected (port: ${port})`);
+                        reject({ reason: 'disconnect', port });
                     }
                 },
                 onError: () => {
                     if (!resolved) {
                         clearTimeout(timer);
                         resolved = true;
-                        reject({ reason: 'error', host, port });
+                        console.error(`[DiceDeck] Streamer.bot connection error (port: ${port})`);
+                        reject({ reason: 'error', port });
                     }
                 }
             });
-
-            client.on("General.Custom", onCustomMessage)
+            if (getQueryParam('proxy') !== null)
+                client.on("General.Custom", onCustomMessage);
         } catch (e) {
             clearTimeout(timer);
             if (!resolved) {
                 resolved = true;
-                reject({ reason: e && e.message ? e.message : 'exception', host, port });
+                console.error(`[DiceDeck] Exception during Streamer.bot connection (port: ${port}):`, e);
+                reject({ reason: e && e.message ? e.message : 'exception', port });
             }
         }
     });
@@ -591,6 +611,7 @@ class DirectStreamerBotClient extends DiceDeckClient {
      * @returns {Promise<{status: string}>}
      */
     async doAction(params) {
+        console.debug('DirectStreamerBotClient.doAction:', params);
         return this.client.doAction(params);
     }
 }
@@ -632,6 +653,10 @@ class ProxyStreamerBotClient extends DiceDeckClient {
      * @param {Array} actions - The actions array from the remote response.
      */
     _handleGetActionsResponse(actions) {
+        if (!Array.isArray(actions)) {
+            console.error('ProxyStreamerBotClient._handleGetActionsResponse: Malformed response, expected array:', actions);
+            actions = [];
+        }
         if (this._pendingGetActions) {
             clearTimeout(this._pendingGetActions.timeoutId);
             // Map [{Item1, Item2}] to [{id, name}]
@@ -670,25 +695,37 @@ function createDiceDeckClient(client) {
     }
 }
 
+let previousSbClient = null;
+
 /**
  * Sets up the Streamer.bot connection and assigns the client abstraction.
- * @param {string} address
  * @param {string} port
  * @returns {Promise<void>}
  */
-function setupStreamerBot(address, port) {
+async function setupStreamerBot(port) {
     if (!window.StreamerbotClient) {
         SetConnectionStatus(false);
+        console.error('StreamerbotClient is not available: window.StreamerbotClient is undefined.');
         return Promise.reject('StreamerbotClient not available');
     }
-    address = address || localStorage.getItem('sbServerAddress') || '127.0.0.1';
-    port = port || localStorage.getItem('sbServerPort') || '8080';
-    // Remove all logic related to sbInstanceId
-    return tryStreamerbotClientConnect(address, port).then((client) => {
+    port = port || '8080';
+    // Disconnect previous client if setupStreamerBot is called multiple times
+    if (previousSbClient && previousSbClient.disconnect) {
+        try {
+            previousSbClient.disconnect();
+            console.warn('[DiceDeck] Disconnected previous Streamer.bot client.');
+        } catch (e) {
+            console.error('[DiceDeck] Error disconnecting previous Streamer.bot client:', e);
+        }
+    }
+    return tryStreamerbotClientConnect(port).then((client) => {
+        previousSbClient = client;
         window.sbClient = createDiceDeckClient(client);
         // Fetch available actions immediately after connection
         if (window.sbClient.getActions) {
             return window.sbClient.getActions().then(response => {
+                // Uncomment for debugging:
+                // if (window.DEBUG) console.log(response);
                 if (response && response.status === 'ok' && Array.isArray(response.actions)) {
                     appState.availableActions = response.actions;
                 }
@@ -700,7 +737,12 @@ function setupStreamerBot(address, port) {
         return Promise.resolve();
     }).catch((err) => {
         SetConnectionStatus(false);
-        console.warn('[DiceDeck] Failed to connect to Streamer.bot:', err);
+        let reason = err && err.reason ? err.reason : err;
+        console.warn('[DiceDeck] Failed to connect to Streamer.bot:', reason);
+        const bar = document.getElementById('status-text');
+        if (bar) {
+            bar.textContent = `Failed to connect to Streamer.bot: ${reason}`;
+        }
         return Promise.reject(err);
     });
 }
@@ -1053,6 +1095,7 @@ function animateGridBlur() {
 
 // On DOMContentLoaded, try normal connect, else discover
 window.addEventListener('DOMContentLoaded', async () => {
+    SetConnectionStatus(false);
     if (noAnim) {
         document.body.classList.add('no-anim');
     }
@@ -1068,66 +1111,10 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
     setupEditModeToggle();
     const urlParams = new URLSearchParams(window.location.search);
-    const address = urlParams.get('address');
-    const host = urlParams.get('host');
-    const port = urlParams.get('port') || localStorage.getItem('sbServerPort') || '8080';
-    let connected = false;
-    let connectPromise;
-    if (address) {
-        connectPromise = setupStreamerBot(address, port)
-            .then(() => {
-                connected = true;
-                console.log('[DiceDeck] Connected to Streamer.bot at', address, port);
-            })
-            .catch(() => {
-                SetConnectionStatus(false);
-                const bar = document.getElementById('status-text');
-                bar.textContent = `Failed to connect to Streamer.bot at ${address}:${port}`;
-                console.warn('[DiceDeck] Failed to connect to Streamer.bot at', address, port);
-            });
-    } else if (host) {
-        connectPromise = setupStreamerBot(host, port)
-            .then(() => {
-                connected = true;
-                console.log('[DiceDeck] Connected to Streamer.bot at', host, port);
-            })
-            .catch(() => {
-                SetConnectionStatus(false);
-                const bar = document.getElementById('status-text');
-                bar.textContent = `Failed to connect to Streamer.bot at ${host}:${port}`;
-                console.warn('[DiceDeck] Failed to connect to Streamer.bot at', host, port);
-            });
-    } else {
-        // 2. Try localhost/127.0.0.1
-        connectPromise = setupStreamerBot('127.0.0.1', port)
-            .then(() => {
-                connected = true;
-                console.log('[DiceDeck] Connected to Streamer.bot at 127.0.0.1', port);
-            })
-            .catch(() => {
-                // 3. Try localStorage
-                const storedAddress = localStorage.getItem('sbServerAddress');
-                if (storedAddress) {
-                    connectPromise = setupStreamerBot(storedAddress, port)
-                        .then(() => {
-                            connected = true;
-                            console.log('[DiceDeck] Connected to Streamer.bot at', storedAddress, port);
-                        })
-                        .catch(() => {
-                            // 4. If fails, run LAN scan
-                            // This part of the logic is now handled by lan-scan.js
-                            console.log('[DiceDeck] No stored address, running LAN scan for Streamer.bot.');
-                            // The actual LAN scan logic is now in lan-scan.js
-                        });
-                } else {
-                    // 4. No stored address, run LAN scan
-                    // This part of the logic is now handled by lan-scan.js
-                    console.log('[DiceDeck] No stored address, running LAN scan for Streamer.bot.');
-                }
-            });
-    }
-    // --- Ensure availableActions is always populated if possible ---
-    // (Removed: now handled in setupStreamerBot)
+
+    const port = urlParams.get('port') || '8080';
+    await setupStreamerBot(port);
+
     animatePolygonalMesh();
     animateGridBlur();
     // Add grid settings floating button if not present
