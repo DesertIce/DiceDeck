@@ -29,8 +29,7 @@ DiceDeck is a customizable grid-based control panel for Streamer.bot, built with
   - `?address=YOUR_IP&port=YOUR_PORT`
   - Example: `index.html?address=192.168.1.100&port=8080`
 - You can also use the `host` parameter to specify a hostname, mDNS name, or DNS name (e.g., `?host=streamerbot.local`). If both `host` and `address` are provided, `host` takes priority.
-- If neither `address` nor `host` is provided, DiceDeck will attempt to auto-discover Streamer.bot on your local network.  
-  _Note: This discovery process is extremely slow. If you are not running DiceDeck on the same machine as Streamer.bot, it is strongly recommended to specify a `host` or `address` parameter for a much faster connection._
+- If connection fails, you will be prompted to check your address/host/port and try again. LAN scan/auto-discovery is no longer supported.
 
 ## URL Query Parameters
 
@@ -62,7 +61,6 @@ DiceDeck supports several URL query parameters to customize its behavior. You ca
   - `index.html?host=streamerbot.local&import`
 
 **Tip:**
-- If neither `address` nor `host` is provided, DiceDeck will try to auto-discover Streamer.bot on your local network.
 - You can use IP addresses, hostnames, or mDNS names (like `streamerbot.local`) as long as they resolve on your network.
 - To reset to default, simply remove all parameters from the URL and reload the page.
 

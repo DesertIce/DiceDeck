@@ -1,4 +1,8 @@
 // Utility to fetch JSON data
+/**
+ * Fetches the grid data from data.json and patches legacy action names.
+ * @returns {Promise<Object>} The grid data object.
+ */
 async function fetchGridData() {
     try {
         const res = await fetch('data.json');
@@ -19,6 +23,10 @@ async function fetchGridData() {
 }
 
 // Status bar update
+/**
+ * Updates the connection status bar in the UI.
+ * @param {boolean} connected - Whether the app is connected to Streamer.bot.
+ */
 function SetConnectionStatus(connected) {
     const bar = document.getElementById('status-text');
     const indicator = document.getElementById('status-indicator');
@@ -43,22 +51,51 @@ const appState = {
     gridBlurMax: 12,
     unsavedChanges: false,
 };
+window.appState = appState;
 
 // Utility to map action_id to action name
+/**
+ * Maps an action_id to its action name using appState.availableActions.
+ * @param {string} action_id
+ * @returns {string}
+ */
 function getActionNameById(action_id) {
     if (!appState.availableActions || !Array.isArray(appState.availableActions)) return '';
     const found = appState.availableActions.find(a => a.id === action_id);
+    if (!found) {
+        console.warn(`getActionNameById: Action name not found for id: ${action_id}`);
+    }
     return found ? found.name : '';
 }
 // Utility to map action name to action_id
+/**
+ * Maps an action name to its action_id using appState.availableActions.
+ * @param {string} action_name
+ * @returns {string}
+ */
 function getActionIdByName(action_name) {
     if (!appState.availableActions || !Array.isArray(appState.availableActions)) return '';
     const found = appState.availableActions.find(a => a.name === action_name);
+    if (!found) {
+        console.warn(`getActionIdByName: Action id not found for name: ${action_name}`);
+    }
     return found ? found.id : '';
 }
 
+/**
+ * Renders the grid of buttons in the UI.
+ * @param {Object} params - Grid parameters (rows, cols, buttons, gap, blurMin, blurMax)
+ */
 function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
     const grid = document.getElementById('grid-container');
+    if (!grid) {
+        console.error('renderGrid: Grid container not found in DOM');
+        return;
+    }
+    if (!Array.isArray(buttons)) {
+        console.warn('renderGrid: buttons is not an array', buttons);
+        return;
+    }
     grid.innerHTML = '';
     // Set CSS variables for grid sizing
     grid.style.setProperty('--grid-rows', rows);
@@ -70,8 +107,40 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
     // Create a map for quick lookup
     const btnMap = {};
     buttons.forEach((btn, idx) => {
+        // Log and skip out-of-bounds buttons
+        if (btn.row < 0 || btn.row >= rows || btn.col < 0 || btn.col >= cols) {
+            console.warn(`renderGrid: Button at idx ${idx} has out-of-bounds row/col:`, btn);
+            return;
+        }
         btnMap[`${btn.row},${btn.col}`] = { ...btn, idx };
     });
+
+    // Unified handler for both click and touchend
+    function handleGridButtonAction(e) {
+        // Prevent double-firing on touch devices
+        if (e.type === 'touchend') {
+            e.preventDefault();
+            e.target.__handledTouch = true;
+        }
+        if (e.type === 'click' && e.target.__handledTouch) {
+            e.target.__handledTouch = false;
+            return;
+        }
+
+        const btn = e.currentTarget.__btnData;
+        if (
+            window.sbClient &&
+            window.sbClient.client &&
+            window.sbClient.client.doAction &&
+            window.sbClient.client.socket &&
+            window.sbClient.client.socket.readyState === 1 
+        ) {
+            window.sbClient.doAction(btn.action_id).catch(err => {
+                console.error('Failed to trigger action:', btn.action_id, err);
+                alert('Failed to trigger action: ' + btn.action_id);
+            });
+        }
+    }
 
     for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
@@ -107,7 +176,7 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
                         if (e.button === 1) {
                             e.preventDefault();
                             const actionName = btn.action_id ? getActionNameById(btn.action_id) : (btn.action || '');
-                            if (window.sbClient && window.sbClient.socket.readyState === 1 && actionName) {
+                            if (window.sbClient && window.sbClient.socket && window.sbClient.socket.readyState === 1 && actionName) {
                                 window.sbClient.doAction({ name: actionName });
                             }
                         }
@@ -119,17 +188,13 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
                     el.ondrop = null;
                     el.ondragend = null;
                     el.ondragleave = null;
-                    el.onclick = async (e) => {
-                        const actionName = btn.action_id ? getActionNameById(btn.action_id) : (btn.action || '');
-                        if (window.sbClient && window.sbClient.socket.readyState === 1 && actionName) {
-                            try {
-                                await window.sbClient.doAction({ name: actionName });
-                            } catch (err) {
-                                alert('Failed to trigger action: ' + actionName);
-                            }
-                        }
-                    };
-                    el.ontouchend = el.onclick;
+                    // Remove old handlers
+                    el.onclick = null;
+                    el.ontouchend = null;
+                    // Attach unified handler
+                    el.__btnData = btn;
+                    el.addEventListener('click', handleGridButtonAction, false);
+                    el.addEventListener('touchend', handleGridButtonAction, false);
                 }
                 // Debug overlay
                 if (gridDebugOverlay) {
@@ -202,16 +267,26 @@ function handleDragOver(e) {
     this.classList.add('drag-over');
 }
 
+/**
+ * Handles the drop event for drag-and-drop grid editing.
+ * @param {DragEvent} e
+ */
 function handleDrop(e) {
     e.preventDefault();
     this.classList.remove('drag-over');
     const targetIdx = this.dataset.idx;
     const targetRow = parseInt(this.dataset.row, 10);
     const targetCol = parseInt(this.dataset.col, 10);
+    if (dragSrcIdx === null) {
+        console.warn('handleDrop: dragSrcIdx is null');
+    }
     if (dragSrcIdx !== null) {
         if (typeof targetIdx !== 'undefined') {
             // Swap with another button
             if (dragSrcIdx !== targetIdx) {
+                if (!appState.gridData.buttons[dragSrcIdx] || !appState.gridData.buttons[targetIdx]) {
+                    console.warn('handleDrop: Invalid button indices', dragSrcIdx, targetIdx);
+                }
                 const temp = { ...appState.gridData.buttons[dragSrcIdx] };
                 appState.gridData.buttons[dragSrcIdx].row = appState.gridData.buttons[targetIdx].row;
                 appState.gridData.buttons[dragSrcIdx].col = appState.gridData.buttons[targetIdx].col;
@@ -223,6 +298,9 @@ function handleDrop(e) {
             }
         } else {
             // Move to empty cell
+            if (!appState.gridData.buttons[dragSrcIdx]) {
+                console.warn('handleDrop: Invalid dragSrcIdx for empty cell', dragSrcIdx);
+            }
             appState.gridData.buttons[dragSrcIdx].row = targetRow;
             appState.gridData.buttons[dragSrcIdx].col = targetCol;
             appState.unsavedChanges = true;
@@ -242,10 +320,17 @@ function handleDragLeave(e) {
     this.classList.remove('drag-over');
 }
 
+/**
+ * Sets up the edit mode toggle and inline grid settings UI.
+ */
 function setupEditModeToggle() {
     const editBtn = document.getElementById('edit-toggle');
     const saveBtn = document.getElementById('save-layout');
     const statusBarButtons = document.querySelector('.status-bar-buttons');
+    if (!editBtn || !saveBtn || !statusBarButtons) {
+        console.error('setupEditModeToggle: Required DOM elements missing', { editBtn, saveBtn, statusBarButtons });
+        return;
+    }
     let gridSettingsInline = document.getElementById('grid-settings-inline');
     function updateInlineSettings() {
         if (appState.editMode) {
@@ -332,6 +417,8 @@ function setupEditModeToggle() {
             try {
                 const response = await window.sbClient.getActions();
                 if (response && response.status === 'ok' && Array.isArray(response.actions)) {
+                    // Uncomment for debugging:
+                    // if (window.DEBUG) console.log(response.actions);
                     appState.availableActions = response.actions;
                 }
             } catch (e) {
@@ -370,10 +457,15 @@ function setupEditModeToggle() {
     setSaveButtonState();
 }
 
-// Move setSaveButtonState to top level
+/**
+ * Sets the state of the save button based on edit mode and unsaved changes.
+ */
 function setSaveButtonState() {
     const saveBtn = document.getElementById('save-layout');
-    if (!saveBtn) return;
+    if (!saveBtn) {
+        console.warn('setSaveButtonState: Save button not found');
+        return;
+    }
     if (appState.editMode) {
         saveBtn.style.display = 'inline-block';
         saveBtn.disabled = !appState.unsavedChanges;
@@ -383,133 +475,88 @@ function setSaveButtonState() {
     }
 }
 
-// --- Streamer.bot LAN Discovery Overlay and Logic ---
-function showDiscoveryOverlay(message, progress = 0, showBtns = false, onConfirm = null, onReject = null) {
-    let overlay = document.getElementById('sb-discovery-overlay');
-    if (!overlay) {
-        overlay = document.createElement('div');
-        overlay.id = 'sb-discovery-overlay';
-        overlay.innerHTML = `
-            <div class="sb-discovery-box">
-                <div class="sb-discovery-message"></div>
-                <div class="sb-discovery-progress"><div class="sb-discovery-bar" style="width:0%"></div></div>
-                <div class="sb-discovery-btns" style="display:none;">
-                    <button class="sb-discovery-confirm">Yes</button>
-                    <button class="sb-discovery-reject">No</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(overlay);
-    }
-    const msg = overlay.querySelector('.sb-discovery-message');
-    const bar = overlay.querySelector('.sb-discovery-bar');
-    const btns = overlay.querySelector('.sb-discovery-btns');
-    msg.innerHTML = message;
-    bar.style.width = (progress * 100) + '%';
-    if (showBtns) {
-        btns.style.display = 'flex';
-        const confirmBtn = overlay.querySelector('.sb-discovery-confirm');
-        const rejectBtn = overlay.querySelector('.sb-discovery-reject');
-        confirmBtn.onclick = () => { if (onConfirm) onConfirm(); hideDiscoveryOverlay(); };
-        rejectBtn.onclick = () => { if (onReject) onReject(); hideDiscoveryOverlay(); };
-    } else {
-        btns.style.display = 'none';
-    }
-}
-function hideDiscoveryOverlay() {
-    const overlay = document.getElementById('sb-discovery-overlay');
-    if (overlay) overlay.remove();
-}
-
-// Utility to determine WebSocket protocol
-function getWebSocketProtocol() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const wsParam = urlParams.get('ws');
-    if (wsParam === 'ws') return 'ws';
-    if (wsParam === 'wss') return 'wss';
-    return window.location.protocol === 'https:' ? 'wss' : 'ws';
-}
-
-// Utility to get password from query param
-function getStreamerbotPassword() {
-    const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.get('password') || undefined;
-}
-
-// Use StreamerbotClient for handshake/info
-async function tryStreamerbotClientConnect(host, port, timeout = 2000) {
+/**
+ * Attempts to connect to Streamer.bot using the provided host and port.
+ * @param {string} port
+ * @param {number} timeout
+ * @returns {Promise<Object>} The connected client instance.
+ */
+async function tryStreamerbotClientConnect(port, timeout = 2000) {
     return new Promise((resolve, reject) => {
         let resolved = false;
         let timer = setTimeout(() => {
             if (!resolved) {
                 resolved = true;
                 if (client && client.disconnect) client.disconnect();
-                reject({ reason: 'timeout', host, port });
+                console.error(`[DiceDeck] Streamer.bot connection timed out (port: ${port})`);
+                reject({ reason: 'timeout', port });
             }
         }, timeout);
         let client;
         try {
             client = new window.StreamerbotClient({
-                host,
+                host: "127.0.0.1",
                 port,
-                scheme: getWebSocketProtocol(),
-                password: getStreamerbotPassword(),
                 onConnect: async (info) => {
+                    SetConnectionStatus(true);
                     clearTimeout(timer);
                     if (!resolved) {
                         resolved = true;
-                        if (client && client.disconnect) client.disconnect();
-                        resolve(info);
+                        resolve(client); // Return the client instance
                     }
                 },
                 onDisconnect: () => {
+                    SetConnectionStatus(false);
                     if (!resolved) {
                         clearTimeout(timer);
                         resolved = true;
-                        reject({ reason: 'disconnect', host, port });
+                        console.error(`[DiceDeck] Streamer.bot disconnected (port: ${port})`);
+                        reject({ reason: 'disconnect', port });
                     }
                 },
                 onError: () => {
                     if (!resolved) {
                         clearTimeout(timer);
                         resolved = true;
-                        reject({ reason: 'error', host, port });
+                        console.error(`[DiceDeck] Streamer.bot connection error (port: ${port})`);
+                        reject({ reason: 'error', port });
                     }
                 }
             });
+            if (getQueryParam('proxy') !== null)
+                client.on("General.Custom", onCustomMessage);
         } catch (e) {
             clearTimeout(timer);
             if (!resolved) {
                 resolved = true;
-                reject({ reason: e && e.message ? e.message : 'exception', host, port });
+                console.error(`[DiceDeck] Exception during Streamer.bot connection (port: ${port}):`, e);
+                reject({ reason: e && e.message ? e.message : 'exception', port });
             }
         }
     });
 }
 
-function resolveHostToIP(host, port, callback) {
-    // Try to fetch with port (HEAD)
-    fetch(`http://${host}:${port}/`, { method: 'HEAD', mode: 'no-cors' })
-        .then(() => callback(host))
-        .catch(() => {
-            // Try to fetch without port (HEAD)
-            fetch(`http://${host}/`, { method: 'HEAD', mode: 'no-cors' })
-                .then(() => callback(host))
-                .catch(() => {
-                    // Try to fetch with port (GET)
-                    fetch(`http://${host}:${port}/`, { method: 'GET', mode: 'no-cors' })
-                        .then(() => callback(host))
-                        .catch(() => {
-                            // Try to fetch without port (GET)
-                            fetch(`http://${host}/`, { method: 'GET', mode: 'no-cors' })
-                                .then(() => callback(host))
-                                .catch(() => callback(null));
-                        });
-                });
-        });
+/**
+ * Handles custom messages from the backend for proxy RPCs and other events.
+ * Extend this to handle new message types as needed.
+ * @param {Object} message
+ */
+function onCustomMessage(message){
+    try {
+        if(message?.type === "StreamerBotProxyGetActions"){
+            if (window.sbClient instanceof ProxyStreamerBotClient) {
+                window.sbClient._handleGetActionsResponse(message.actions || []);
+            }
+        } else {
+            // Log unknown message types for debugging
+            console.warn('onCustomMessage: Unknown message type', message?.type, message);
+        }
+    }
+    catch (e) {
+        console.error(e);
+    }
 }
 
-// --- Parallel LAN Discovery with Web Workers ---
 // --- Query Param Helpers ---
 function getQueryParam(name) {
     return new URLSearchParams(window.location.search).get(name);
@@ -521,202 +568,195 @@ if (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) { meshR
 if (navigator.deviceMemory && navigator.deviceMemory <= 4) { meshRows = 7; meshCols = 12; }
 const noAnim = getQueryParam('noanim') !== null;
 
-// --- Adaptive LAN Scan Concurrency ---
-let SB_DISCOVERY_WORKER_COUNT = 5;
-let MAX_CONCURRENT_PROBES = 20;
-const qpConcurrency = parseInt(getQueryParam('concurrency'), 10);
-const qpWorkers = parseInt(getQueryParam('workers'), 10);
-const qpProbes = parseInt(getQueryParam('probes'), 10);
-if (!isNaN(qpConcurrency) && qpConcurrency > 0) {
-    // Try to split evenly between workers/probes
-    SB_DISCOVERY_WORKER_COUNT = Math.max(1, Math.floor(Math.sqrt(qpConcurrency)));
-    MAX_CONCURRENT_PROBES = Math.max(1, Math.ceil(qpConcurrency / SB_DISCOVERY_WORKER_COUNT));
+// --- DiceDeckClient Abstraction ---
+/**
+ * Base class for DiceDeck client implementations.
+ * @abstract
+ */
+class DiceDeckClient {
+    /**
+     * Fetches available actions.
+     * @returns {Promise<{status: string, actions: Array}>}
+     */
+    async getActions() { throw new Error('Not implemented'); }
+    /**
+     * Triggers an action.
+     * @param {Object} params
+     * @returns {Promise<{status: string}>}
+     */
+    async doAction(params) { throw new Error('Not implemented'); }
 }
-if (!isNaN(qpWorkers) && qpWorkers > 0) SB_DISCOVERY_WORKER_COUNT = qpWorkers;
-if (!isNaN(qpProbes) && qpProbes > 0) MAX_CONCURRENT_PROBES = qpProbes;
 
-// Patch global for worker
-window.SB_DISCOVERY_WORKER_COUNT = SB_DISCOVERY_WORKER_COUNT;
-window.MAX_CONCURRENT_PROBES = MAX_CONCURRENT_PROBES;
-
-// --- Patch worker creation to use adaptive concurrency ---
-const SB_DISCOVERY_WORKER_URL = 'sb-discovery-worker.js';
-// SB_DISCOVERY_WORKER_COUNT is now set above
-
-async function discoverStreamerBotOnLAN() {
-    // Scan most common residential subnets first, then the rest
-    const subnets = [];
-    // 1. Most common: 192.168.1.x
-    subnets.push('192.168.1');
-    // 2. Next most common: 192.168.0.x
-    subnets.push('192.168.0');
-    // 3. Also common: 10.0.0.x
-    subnets.push('10.0.0');
-    // 4. All other 192.168.x.x (excluding .0 and .1)
-    for (let i = 2; i <= 255; i++) {
-        subnets.push(`192.168.${i}`);
+/**
+ * Direct client implementation using the native Streamer.bot WebSocket API.
+ */
+class DirectStreamerBotClient extends DiceDeckClient {
+    /**
+     * @param {Object} client - The native Streamer.bot client instance.
+     */
+    constructor(client) {
+        super();
+        this.client = client;
     }
-    // 5. 172.16.x.x through 172.31.x.x
-    for (let i = 16; i <= 31; i++) {
-        subnets.push(`172.${i}.0`);
+    /**
+     * Fetches available actions from the native client.
+     * @returns {Promise<{status: string, actions: Array}>}
+     */
+    async getActions() {
+        return this.client.getActions();
     }
-    const port = '8080';
-    const hosts = [];
-    for (const subnet of subnets) {
-        for (let i = 1; i <= 254; i++) {
-            hosts.push(`${subnet}.${i}`);
+    /**
+     * Triggers an action on the native client.
+     * @param {Object} params
+     * @returns {Promise<{status: string}>}
+     */
+    async doAction(params) {
+        console.debug('DirectStreamerBotClient.doAction:', params);
+        return this.client.doAction(params);
+    }
+}
+
+/**
+ * Proxy client implementation using RPC via localClient.doAction and async responses.
+ * Only one in-flight getActions is supported at a time.
+ */
+class ProxyStreamerBotClient extends DiceDeckClient {
+    /**
+     * @param {Object} localClient - The local client used to send RPCs.
+     */
+    constructor(localClient) {
+        super();
+        this.localClient = localClient;
+        this._pendingGetActions = null; // {resolve, reject, timeoutId}
+    }
+    /**
+     * Fetches available actions via RPC. Resolves when the response is received.
+     * @returns {Promise<{status: string, actions: Array}>}
+     */
+    async getActions() {
+        if (this._pendingGetActions) {
+            return Promise.reject(new Error('A getActions call is already pending'));
+        }
+        return new Promise((resolve, reject) => {
+            // Set up a timeout to avoid hanging forever
+            const timeoutId = setTimeout(() => {
+                this._pendingGetActions = null;
+                reject(new Error('ProxyStreamerBotClient.getActions timed out'));
+            }, 5000);
+            this._pendingGetActions = { resolve, reject, timeoutId };
+            this.localClient.doAction({ name: 'remoteGetActions' });
+        });
+    }
+    /**
+     * Called by onCustomMessage when the remote actions response arrives.
+     * Maps [{Item1, Item2}] to [{id, name}].
+     * @param {Array} actions - The actions array from the remote response.
+     */
+    _handleGetActionsResponse(actions) {
+        if (!Array.isArray(actions)) {
+            console.error('ProxyStreamerBotClient._handleGetActionsResponse: Malformed response, expected array:', actions);
+            actions = [];
+        }
+        if (this._pendingGetActions) {
+            clearTimeout(this._pendingGetActions.timeoutId);
+            // Map [{Item1, Item2}] to [{id, name}]
+            const mapped = Array.isArray(actions)
+                ? actions.map(a => ({ id: a.Item1, name: a.Item2 }))
+                : [];
+            this._pendingGetActions.resolve({ status: 'ok', actions: mapped });
+            this._pendingGetActions = null;
         }
     }
-    // Remove all test/dummy IPs from LAN scan logic
-    // Remove: for (let i = 1; i <= 78; i++) { hosts.push(`192.0.2.${i}`); }
-    // Split hosts into chunks for workers
-    const chunkSize = Math.ceil(hosts.length / SB_DISCOVERY_WORKER_COUNT);
-    let found = false;
-    let completedWorkers = 0;
-    let totalProbed = 0;
-    let totalToProbe = hosts.length;
-    let workers = [];
-    function stopAllWorkers() {
-        workers.forEach(w => w.terminate());
-        workers = [];
-    }
-    const discoveryNote = '<br><small style="color:#aaa">Note: You may see many connection errors in your browser console during scanning. This is normal and expected.<br><br>Tip: Discovery is only needed if the server IP address changes or is lost. If you already know the IP and port of your Streamer.bot server, you can skip scanning by adding them to the URL as query parameters.<br>For example: <code>?address=192.168.1.100&port=8080</code> or <code>?host=streamerbot.local</code> (host can be a hostname, mDNS, or DNS name).</small>';
-    showDiscoveryOverlay('Scanning LAN for Streamer.bot...' + discoveryNote, 0);
-    const workerDelay = 200; // ms delay between worker spawns
-    for (let w = 0; w < SB_DISCOVERY_WORKER_COUNT; w++) {
-        setTimeout(() => {
-            const chunk = hosts.slice(w * chunkSize, (w + 1) * chunkSize);
-            if (chunk.length === 0) return;
-            const worker = new Worker(SB_DISCOVERY_WORKER_URL);
-            workers.push(worker);
-            worker.postMessage({ ips: chunk, port });
-            worker.onmessage = async (e) => {
-                if (e.data.log) {
-                    console.log(`[LANScan] ${e.data.log}`);
-                }
-                if (found) return;
-                if (e.data.progress) {
-                    totalProbed += e.data.progress;
-                    showDiscoveryOverlay(`Scanning LAN for Streamer.bot... (${totalProbed}/${totalToProbe})` + discoveryNote, totalProbed / totalToProbe);
-                }
-                if (e.data.ip) {
-                    // Escalate to StreamerbotClient handshake
-                    const isTargetIP = e.data.ip === '192.168.50.32';
-                    if (isTargetIP) {
-                        console.info(`[LANScan][DETAIL] Attempting handshake with ${e.data.ip}:${port}`);
-                    }
-                    try {
-                        const info = await tryStreamerbotClientConnect(e.data.ip, port, 1200);
-                        if (isTargetIP) {
-                            console.info(`[LANScan][DETAIL] Handshake success for ${e.data.ip}:${port}`);
-                            console.info(`[LANScan][DETAIL] Handshake info:`, info);
-                        }
-                        found = true;
-                        stopAllWorkers();
-                        showDiscoveryOverlay(`Found Streamer.bot at ${e.data.ip}:${port}. Connect?`, 1, true,
-                            () => {
-                                localStorage.setItem('sbServerAddress', e.data.ip);
-                                localStorage.setItem('sbServerPort', port);
-                                hideDiscoveryOverlay();
-                                setupStreamerBot(e.data.ip, port);
-                            },
-                            () => {
-                                found = false;
-                                discoverStreamerBotOnLAN();
-                            }
-                        );
-                    } catch (err) {
-                        // Not a valid Streamer.bot instance, keep going
-                        if (err && err.host && err.port && err.reason) {
-                            if (isTargetIP) {
-                                console.warn(`[LANScan][DETAIL] Failed to connect to ${err.host}:${err.port} - ${err.reason}`);
-                                if (err && err.stack) {
-                                    console.warn(`[LANScan][DETAIL] Stack:`, err.stack);
-                                }
-                            } else {
-                                // Only log disconnects and errors for other IPs
-                                if (err.reason !== 'timeout' && !"Timeout" in err.toString()) {
-                                    console.warn(`[LANScan] Failed to connect to ${err.host}:${err.port} - ${err.reason}`);
-                                }
-                            }
-                        }
-                    }
-                }
-                if (e.data.done) {
-                    completedWorkers++;
-                    // Do not increment totalProbed here, as it's now updated per-IP
-                    if (completedWorkers === workers.length && !found) {
-                        showDiscoveryOverlay('No Streamer.bot server found on your LAN. Please check your network or enter the address manually.', 1, false);
-                        setTimeout(hideDiscoveryOverlay, 4000);
-                    }
-                }
-            };
-        }, w * workerDelay);
+    /**
+     * Triggers a remote action via RPC. No feedback is provided to the caller.
+     * @param {Object} params
+     * @returns {Promise<{status: string}>}
+     */
+    async doAction(params) {
+        // NOTE: No feedback is provided to the caller for remoteDoAction.
+        // If you want to support async responses, implement a similar pattern as getActions.
+        console.warn('ProxyStreamerBotClient.doAction: No feedback is provided to the caller.');
+        this.localClient.doAction({ name: 'remoteDoAction' }, { remoteActionName: params.name });
+        return { status: 'ok' };
     }
 }
 
-// Patch setupStreamerBot to accept address/port
-function setupStreamerBot(address, port) {
+/**
+ * Creates the appropriate DiceDeck client based on query parameters.
+ * @param {Object} client - The native Streamer.bot client instance.
+ * @returns {DiceDeckClient}
+ */
+function createDiceDeckClient(client) {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('proxy')) {
+        return new ProxyStreamerBotClient(client);
+    } else {
+        return new DirectStreamerBotClient(client);
+    }
+}
+
+let previousSbClient = null;
+
+/**
+ * Sets up the Streamer.bot connection and assigns the client abstraction.
+ * @param {string} port
+ * @returns {Promise<void>}
+ */
+async function setupStreamerBot(port) {
     if (!window.StreamerbotClient) {
         SetConnectionStatus(false);
-        return;
+        console.error('StreamerbotClient is not available: window.StreamerbotClient is undefined.');
+        return Promise.reject('StreamerbotClient not available');
     }
-    const urlParams = new URLSearchParams(window.location.search);
-    const paramAddress = urlParams.get('address');
-    const paramPort = urlParams.get('port');
-    address = address || localStorage.getItem('sbServerAddress') || paramAddress || '127.0.0.1';
-    port = port || localStorage.getItem('sbServerPort') || paramPort || '8080';
-    if (paramAddress || paramPort) {
-        console.log(`[DiceDeck] Using Streamer.bot address from query params: ${address}:${port}`);
+    port = port || '8080';
+    // Disconnect previous client if setupStreamerBot is called multiple times
+    if (previousSbClient && previousSbClient.disconnect) {
+        try {
+            previousSbClient.disconnect();
+            console.warn('[DiceDeck] Disconnected previous Streamer.bot client.');
+        } catch (e) {
+            console.error('[DiceDeck] Error disconnecting previous Streamer.bot client:', e);
+        }
     }
-    const storedInstanceId = localStorage.getItem('sbInstanceId');
-    tryStreamerbotClientConnect(address, port).then((client) => {
-        window.sbClient = client;
+    return tryStreamerbotClientConnect(port).then((client) => {
+        previousSbClient = client;
+        window.sbClient = createDiceDeckClient(client);
         // Fetch available actions immediately after connection
-        if (client.getActions) {
-            client.getActions().then(response => {
+        if (window.sbClient.getActions) {
+            return window.sbClient.getActions().then(response => {
+                // Uncomment for debugging:
+                // if (window.DEBUG) console.log(response);
                 if (response && response.status === 'ok' && Array.isArray(response.actions)) {
                     appState.availableActions = response.actions;
                 }
-            }).catch(() => {
-                appState.availableActions = [];
             });
         }
-        // Confirm instanceId if previously stored
-        if (storedInstanceId) {
-            (client.getHostInfo ? client.getHostInfo() : Promise.resolve()).then(hostInfo => {
-                if (hostInfo && hostInfo.instanceId === storedInstanceId) {
-                    console.log(`[DiceDeck] Confirmed reconnection to previously confirmed Streamer.bot instance: ${hostInfo.instanceId}`);
-                } else {
-                    console.warn(`[DiceDeck] Connected to a different Streamer.bot instance! Expected: ${storedInstanceId}, Got: ${hostInfo && hostInfo.instanceId}`);
-                    showDiscoveryOverlay(
-                        `Connected to a different Streamer.bot instance:<br><b>${hostInfo && hostInfo.name}</b><br>ID: <code>${hostInfo && hostInfo.instanceId}</code><br><br>Do you want to accept this new instance?`,
-                        1, true,
-                        () => {
-                            localStorage.setItem('sbInstanceId', hostInfo.instanceId);
-                            localStorage.setItem('sbServerAddress', address);
-                            localStorage.setItem('sbServerPort', port);
-                            hideDiscoveryOverlay();
-                            console.log('[DiceDeck] User accepted new Streamer.bot instance.');
-                        },
-                        () => {
-                            hideDiscoveryOverlay();
-                            discoverStreamerBotOnLAN();
-                        }
-                    );
-                }
-            }).catch(e => {
-                console.warn('[DiceDeck] Could not confirm Streamer.bot instanceId after reconnect.', e);
-            });
-        }
+        return Promise.resolve(); // No actions to fetch
+    }).then(() => {
         SetConnectionStatus(true);
-    }).catch(() => {
+        return Promise.resolve();
+    }).catch((err) => {
         SetConnectionStatus(false);
+        let reason = err && err.reason ? err.reason : err;
+        console.warn('[DiceDeck] Failed to connect to Streamer.bot:', reason);
+        const bar = document.getElementById('status-text');
+        if (bar) {
+            bar.textContent = `Failed to connect to Streamer.bot: ${reason}`;
+        }
+        return Promise.reject(err);
     });
 }
 
+/**
+ * Opens the edit modal for a grid button.
+ * @param {number} idx - The index of the button in appState.gridData.buttons.
+ */
 function openEditModal(idx) {
     const btn = appState.gridData.buttons[idx];
+    if (!btn) {
+        console.error('openEditModal: Button not found at idx', idx);
+        return;
+    }
     // Modal backdrop
     const backdrop = document.createElement('div');
     backdrop.className = 'edit-modal-backdrop';
@@ -807,7 +847,16 @@ function openEditModal(idx) {
     iconInput.dispatchEvent(new Event('input'));
 }
 
+/**
+ * Opens the add button modal for a specific grid cell.
+ * @param {number} row
+ * @param {number} col
+ */
 function openAddButtonModal(row, col) {
+    if (!appState.gridData) {
+        console.error('openAddButtonModal: appState.gridData is missing');
+        return;
+    }
     // Modal backdrop
     const backdrop = document.createElement('div');
     backdrop.className = 'edit-modal-backdrop';
@@ -877,7 +926,14 @@ function openAddButtonModal(row, col) {
     iconInput.dispatchEvent(new Event('input'));
 }
 
+/**
+ * Opens the grid settings modal.
+ */
 function openGridSettingsModal() {
+    if (!appState.gridData) {
+        console.error('openGridSettingsModal: appState.gridData is missing');
+        return;
+    }
     // Modal backdrop
     const backdrop = document.createElement('div');
     backdrop.className = 'edit-modal-backdrop';
@@ -929,13 +985,20 @@ let meshAnimationState = {
     cols: meshCols,
 };
 
+/**
+ * Animates the polygonal mesh SVG background.
+ * @param {boolean} force - If true, forces a redraw.
+ */
 function animatePolygonalMesh(force) {
     if (noAnim) return;
     if (!meshAnimationState.svg) {
         meshAnimationState.svg = document.getElementById('bg-mesh');
     }
     const svg = meshAnimationState.svg;
-    if (!svg) return;
+    if (!svg) {
+        console.warn('animatePolygonalMesh: SVG element not found');
+        return;
+    }
     if (!meshAnimationState.running && !force) return;
     // 24fps throttle
     const now = performance.now();
@@ -1016,6 +1079,9 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
     });
 }
 
+/**
+ * Animates the grid blur effect.
+ */
 function animateGridBlur() {
     if (noAnim) return;
     const grid = document.getElementById('grid-container');
@@ -1029,6 +1095,7 @@ function animateGridBlur() {
 
 // On DOMContentLoaded, try normal connect, else discover
 window.addEventListener('DOMContentLoaded', async () => {
+    SetConnectionStatus(false);
     if (noAnim) {
         document.body.classList.add('no-anim');
     }
@@ -1044,54 +1111,10 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
     setupEditModeToggle();
     const urlParams = new URLSearchParams(window.location.search);
-    const address = urlParams.get('address');
-    const host = urlParams.get('host');
-    const port = urlParams.get('port') || localStorage.getItem('sbServerPort') || '8080';
-    let connected = false;
-    if (address) {
-        try {
-            await tryStreamerbotClientConnect(address, port, 1200);
-            setupStreamerBot(address, port);
-            connected = true;
-        } catch {
-            SetConnectionStatus(false);
-            const bar = document.getElementById('status-text');
-            bar.textContent = `Failed to connect to Streamer.bot at ${address}:${port}`;
-        }
-    } else if (host) {
-        try {
-            await tryStreamerbotClientConnect(host, port, 1200);
-            setupStreamerBot(host, port);
-            connected = true;
-        } catch {
-            SetConnectionStatus(false);
-            const bar = document.getElementById('status-text');
-            bar.textContent = `Failed to connect to Streamer.bot at ${host}:${port}`;
-        }
-    } else {
-        // 2. Try localhost/127.0.0.1
-        try {
-            await tryStreamerbotClientConnect('127.0.0.1', port, 1200);
-            setupStreamerBot('127.0.0.1', port);
-            connected = true;
-        } catch {
-            // 3. Try localStorage
-            const storedAddress = localStorage.getItem('sbServerAddress');
-            if (storedAddress) {
-                try {
-                    await tryStreamerbotClientConnect(storedAddress, port, 1200);
-                    setupStreamerBot(storedAddress, port);
-                    connected = true;
-                } catch {
-                    // 4. If fails, run LAN scan
-                    discoverStreamerBotOnLAN();
-                }
-            } else {
-                // 4. No stored address, run LAN scan
-                discoverStreamerBotOnLAN();
-            }
-        }
-    }
+
+    const port = urlParams.get('port') || '8080';
+    await setupStreamerBot(port);
+
     animatePolygonalMesh();
     animateGridBlur();
     // Add grid settings floating button if not present
@@ -1144,6 +1167,7 @@ if (debugImportBtn && debugImportModal && debugImportTextarea && debugImportCanc
         try {
             json = JSON.parse(debugImportTextarea.value);
         } catch (e) {
+            console.error('Debug Import: Invalid JSON', e);
             alert('Invalid JSON!');
             return;
         }
@@ -1233,12 +1257,14 @@ if (debugImportBtn && debugImportModal && debugImportTextarea && debugImportCanc
             }));
         }
         if (!importButtons || !Array.isArray(importButtons) || importButtons.length === 0) {
+            console.warn('Debug Import: Could not find any buttons to import in the provided JSON.', json);
             alert('Could not find any buttons to import in the provided JSON.');
             return;
         }
         // Validate all have action_id and title
         const valid = importButtons.every(item => item.action_id && item.title);
         if (!valid) {
+            console.warn('Debug Import: Each imported button must have action_id and title.', importButtons);
             alert('Each imported button must have action_id and title.');
             return;
         }
@@ -1254,9 +1280,19 @@ if (getQueryParam('import') === null) {
     if (debugBtn) debugBtn.style.display = 'none';
 }
 
-// Function to import layout from JSON (array of {action_id, title})
+/**
+ * Imports a layout from an array of button objects.
+ * @param {Array} layoutArray
+ */
 function importLayout(layoutArray) {
-    if (!appState.gridData) return;
+    if (!appState.gridData) {
+        console.error('importLayout: appState.gridData is missing');
+        return;
+    }
+    if (!Array.isArray(layoutArray)) {
+        console.warn('importLayout: layoutArray is not an array', layoutArray);
+        return;
+    }
     // Normalize button positions
     let normalized = normalizeButtons(layoutArray.map(sanitizeButton));
     // Compact: remove empty trailing columns and rows
@@ -1288,9 +1324,16 @@ function importLayout(layoutArray) {
     setSaveButtonState();
 }
 
-// Utility: Normalize button positions so min row/col is 0, and fill from top-left
+/**
+ * Normalizes button positions so min row/col is 0, and fills from top-left.
+ * @param {Array} buttons
+ * @returns {Array}
+ */
 function normalizeButtons(buttons) {
-    if (!Array.isArray(buttons) || buttons.length === 0) return buttons;
+    if (!Array.isArray(buttons) || buttons.length === 0) {
+        console.warn('normalizeButtons: buttons is not a non-empty array', buttons);
+        return buttons;
+    }
     // Find min row/col
     let minRow = Math.min(...buttons.map(b => b.row));
     let minCol = Math.min(...buttons.map(b => b.col));
@@ -1303,7 +1346,12 @@ function normalizeButtons(buttons) {
     }
     return buttons;
 }
-// Utility: Check for gaps in first row/col and show a warning
+/**
+ * Checks for gaps in the first row/col and shows a warning if found.
+ * @param {Array} buttons
+ * @param {number} rows
+ * @param {number} cols
+ */
 function checkGridGaps(buttons, rows, cols) {
     let firstRowEmpty = true, firstColEmpty = true;
     for (let c = 0; c < cols; c++) {
@@ -1343,7 +1391,11 @@ function checkGridGaps(buttons, rows, cols) {
     }
 }
 
-// Utility: sanitize string for DOM insertion (basic)
+/**
+ * Sanitizes a string for DOM insertion (basic).
+ * @param {string} str
+ * @returns {string}
+ */
 function sanitizeString(str) {
     if (typeof str !== 'string') return '';
     return str.replace(/[&<>"']/g, function (c) {
@@ -1351,7 +1403,11 @@ function sanitizeString(str) {
     });
 }
 
-// Sanitize all imported button fields
+/**
+ * Sanitizes all imported button fields.
+ * @param {Object} btn
+ * @returns {Object}
+ */
 function sanitizeButton(btn) {
     return {
         row: Number.isInteger(btn.row) ? btn.row : 0,
@@ -1371,24 +1427,3 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
     }
 });
-
-// Show insecure WebSocket warning if needed
-if (window.location.protocol === 'https:' && getWebSocketProtocol() === 'ws') {
-    const warning = document.createElement('div');
-    warning.id = 'ws-warning';
-    warning.style.position = 'fixed';
-    warning.style.top = '0';
-    warning.style.left = '0';
-    warning.style.width = '100vw';
-    warning.style.zIndex = '9999';
-    warning.style.background = '#ffcc00';
-    warning.style.color = '#222';
-    warning.style.fontWeight = 'bold';
-    warning.style.textAlign = 'center';
-    warning.style.padding = '10px 0';
-    warning.style.boxShadow = '0 2px 8px #0003';
-    warning.innerHTML =
-        '⚠️ You are using an insecure WebSocket connection (<code>ws://</code>) on a secure page (<code>https://</code>). ' +
-        '<button style="margin-left:16px;" onclick="this.parentNode.style.display=\'none\'">Dismiss</button>';
-    document.body.appendChild(warning);
-}
