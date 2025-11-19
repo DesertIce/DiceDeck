@@ -435,6 +435,12 @@
       "title": "Longer Break Scene",
       "icon": "",
       "action_id": "a8aa2372-b035-43d2-a87f-ccc915b4f508"
+    },
+    {
+      "row": 5,
+      "col": 5,
+      "title": "SB Test",
+      "action_id": "fea6eb55-dc8a-4800-afaa-f6889838ae82"
     }
   ]
 }
