@@ -159,6 +159,27 @@ test('updates waiting time each second and retries at the deadline without showi
     assert.equal(states.some(state => state.state === 'waiting' && state.delayMs === 0), false);
 });
 
+test('calls the browser timer with the global receiver', async () => {
+    const originalSetTimeout = globalThis.setTimeout;
+    let scheduledTimers = 0;
+    globalThis.setTimeout = function setTimeoutWithBrowserReceiver() {
+        assert.equal(this, globalThis);
+        scheduledTimers += 1;
+        return { fakeTimer: true };
+    };
+
+    try {
+        const supervisor = new ConnectionSupervisor({
+            connect: async () => { throw new Error('offline'); },
+        });
+
+        await supervisor.start();
+        assert.equal(scheduledTimers, 1);
+    } finally {
+        globalThis.setTimeout = originalSetTimeout;
+    }
+});
+
 test('requires initialization and a successful action list before readiness', async () => {
     const calls = [];
     const pendingClients = [];

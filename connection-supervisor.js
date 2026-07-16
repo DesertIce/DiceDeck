@@ -3,9 +3,9 @@ class ConnectionSupervisor {
         connect,
         disconnect = () => {},
         onStateChange = () => {},
-        setTimer = setTimeout,
-        clearTimer = clearTimeout,
-        now = Date.now,
+        setTimer = (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
+        clearTimer = timer => globalThis.clearTimeout(timer),
+        now = () => Date.now(),
         initialDelayMs = 5000,
         maxDelayMs = 300000,
     }) {
