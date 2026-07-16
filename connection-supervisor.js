@@ -5,6 +5,7 @@ class ConnectionSupervisor {
         onStateChange = () => {},
         setTimer = setTimeout,
         clearTimer = clearTimeout,
+        now = Date.now,
         initialDelayMs = 5000,
         maxDelayMs = 300000,
     }) {
@@ -13,6 +14,7 @@ class ConnectionSupervisor {
         this.onStateChange = onStateChange;
         this.setTimer = setTimer;
         this.clearTimer = clearTimer;
+        this.now = now;
         this.initialDelayMs = initialDelayMs;
         this.maxDelayMs = maxDelayMs;
         this.nextDelayMs = initialDelayMs;
@@ -96,11 +98,24 @@ class ConnectionSupervisor {
 
         const delayMs = this.nextDelayMs;
         this.nextDelayMs = Math.min(delayMs * 2, this.maxDelayMs);
-        this.onStateChange({ state: 'waiting', reason, delayMs });
-        this.retryTimer = this.setTimer(() => {
+        const retryAt = this.now() + delayMs;
+        const updateWaitingState = () => {
             this.retryTimer = null;
-            return this._attempt();
-        }, delayMs);
+            if (!this.running) return;
+
+            const remainingMs = Math.max(0, retryAt - this.now());
+            if (remainingMs === 0) return this._attempt();
+
+            const displayDelayMs = Math.ceil(remainingMs / 1000) * 1000;
+            this.onStateChange({ state: 'waiting', reason, delayMs: displayDelayMs });
+            this.retryTimer = this.setTimer(
+                updateWaitingState,
+                Math.min(1000, remainingMs),
+            );
+        };
+
+        this.onStateChange({ state: 'waiting', reason, delayMs });
+        this.retryTimer = this.setTimer(updateWaitingState, Math.min(1000, delayMs));
     }
 }
 

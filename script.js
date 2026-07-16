@@ -853,16 +853,10 @@ function formatRetryDelay(delayMs) {
 }
 
 function startStreamerBotConnection(port) {
-    let retryCountdownTimer = null;
-    const clearRetryCountdown = () => {
-        if (retryCountdownTimer) clearInterval(retryCountdownTimer);
-        retryCountdownTimer = null;
-    };
     const supervisor = new ConnectionSupervisor({
         connect: onConnectionLost => setupStreamerBot(port, onConnectionLost),
         disconnect: connection => connection.sbClient.disconnect(),
         onStateChange({ state, connection, reason, delayMs }) {
-            clearRetryCountdown();
             const bar = document.getElementById('status-text');
             if (state === 'ready') {
                 window.sbClient = connection.sbClient;
@@ -879,15 +873,7 @@ function startStreamerBotConnection(port) {
             }
 
             const detail = reason?.reason || reason?.message || String(reason || 'disconnected');
-            const retryAt = Date.now() + delayMs;
-            const updateRetryCountdown = () => {
-                const remainingMs = Math.max(0, retryAt - Date.now());
-                const roundedMs = Math.ceil(remainingMs / 1000) * 1000;
-                bar.textContent = `Streamer.bot unavailable (${detail}). Retrying in ${formatRetryDelay(roundedMs)}.`;
-                if (remainingMs === 0) clearRetryCountdown();
-            };
-            retryCountdownTimer = setInterval(updateRetryCountdown, 1000);
-            updateRetryCountdown();
+            bar.textContent = `Streamer.bot unavailable (${detail}). Retrying in ${formatRetryDelay(delayMs)}.`;
         },
     });
 
