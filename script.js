@@ -510,11 +510,13 @@ function setSaveButtonState() {
  * Resolves with the connected client instance if successful, or rejects with a reason if the connection fails, times out, or encounters an error.
  * @param {string} port - The port number to connect to.
  * @param {number} [timeout=2000] - The connection timeout in milliseconds.
+ * @param {Function} [onConnectionLost] - Called when a connected client later disconnects or errors.
  * @returns {Promise<Object>} Resolves with the connected client instance.
  */
-async function tryStreamerbotClientConnect(port, timeout = 2000) {
+async function tryStreamerbotClientConnect(port, timeout = 2000, onConnectionLost = () => {}) {
     return new Promise((resolve, reject) => {
         let resolved = false;
+        let connected = false;
         let timer = setTimeout(() => {
             if (!resolved) {
                 resolved = true;
@@ -532,16 +534,19 @@ async function tryStreamerbotClientConnect(port, timeout = 2000) {
                     clearTimeout(timer);
                     if (!resolved) {
                         resolved = true;
+                        connected = true;
                         resolve(client); // Return the client instance
                     }
                 },
                 onDisconnect: () => {
-                    SetConnectionStatus(false);
                     if (!resolved) {
                         clearTimeout(timer);
                         resolved = true;
                         console.error(`[DiceDeck] Streamer.bot disconnected (port: ${port})`);
                         reject({ reason: 'disconnect', port });
+                    } else if (connected) {
+                        connected = false;
+                        onConnectionLost({ reason: 'disconnect', port });
                     }
                 },
                 onError: () => {
@@ -550,6 +555,9 @@ async function tryStreamerbotClientConnect(port, timeout = 2000) {
                         resolved = true;
                         console.error(`[DiceDeck] Streamer.bot connection error (port: ${port})`);
                         reject({ reason: 'error', port });
+                    } else if (connected) {
+                        connected = false;
+                        onConnectionLost({ reason: 'error', port });
                     }
                 }
             });
@@ -566,23 +574,28 @@ async function tryStreamerbotClientConnect(port, timeout = 2000) {
     });
 }
 
+let pendingStreamerBotClient = null;
+
 /**
  * Processes custom backend messages, specifically handling action list responses for proxy clients.
- * If the message type is `StreamerBotProxyGetActions` and the current client is a proxy, updates the available actions.
+ * If the message type is `StreamerBotProxyGetActions`, routes the response to the initializing or connected proxy client.
  * Logs a warning for unknown message types.
  * @param {Object} message - The message object received from the backend.
  */
 function onCustomMessage(message){
     try {
         if(message?.data?.type === "StreamerBotProxyGetActions"){
-            if (window.sbClient instanceof ProxyStreamerBotClient) {
+            const target = pendingStreamerBotClient instanceof ProxyStreamerBotClient
+                ? pendingStreamerBotClient
+                : window.sbClient;
+            if (target instanceof ProxyStreamerBotClient) {
                 // Refined JSON.parse error handling as suggested
                 try {
                     const actions = JSON.parse(message?.data?.json || '[]');
-                    window.sbClient._handleGetActionsResponse(actions);
+                    target._handleGetActionsResponse(actions);
                 } catch (err) {
                     console.error('Failed to parse actions JSON:', err);
-                    window.sbClient._handleGetActionsResponse([]);
+                    target._rejectPendingGetActions(new Error('Failed to parse proxy action list'));
                 }
             }
         } else {
@@ -673,6 +686,10 @@ class DirectStreamerBotClient extends DiceDeckClient {
     async doAction(params) {
         return this.client.doAction(params);
     }
+
+    disconnect() {
+        this.client.disconnect?.();
+    }
 }
 
 const remoteGetActions = "remoteGetActions"; 
@@ -721,8 +738,7 @@ class ProxyStreamerBotClient extends DiceDeckClient {
         return new Promise((resolve, reject) => {
             // Set up a timeout to avoid hanging forever
             const timeoutId = setTimeout(() => {
-                this._pendingGetActions = null;
-                reject(new Error('ProxyStreamerBotClient.getActions timed out'));
+                this._rejectPendingGetActions(new Error('ProxyStreamerBotClient.getActions timed out'));
             }, 5000);
             this._pendingGetActions = { resolve, reject, timeoutId };
             this.localClient.doAction(this.remoteGetActionsId);
@@ -736,7 +752,8 @@ class ProxyStreamerBotClient extends DiceDeckClient {
     _handleGetActionsResponse(actions) {
         if (!Array.isArray(actions)) {
             console.error('ProxyStreamerBotClient._handleGetActionsResponse: Malformed response, expected array:', actions);
-            actions = [];
+            this._rejectPendingGetActions(new Error('Malformed proxy action list response'));
+            return;
         }
         if (this._pendingGetActions) {
             clearTimeout(this._pendingGetActions.timeoutId);
@@ -747,6 +764,13 @@ class ProxyStreamerBotClient extends DiceDeckClient {
             this._pendingGetActions.resolve({ status: 'ok', actions: mapped });
             this._pendingGetActions = null;
         }
+    }
+
+    _rejectPendingGetActions(error) {
+        if (!this._pendingGetActions) return;
+        clearTimeout(this._pendingGetActions.timeoutId);
+        this._pendingGetActions.reject(error);
+        this._pendingGetActions = null;
     }
     /**
      * Triggers a remote action via RPC. Handles errors and parameter passing.
@@ -763,6 +787,11 @@ class ProxyStreamerBotClient extends DiceDeckClient {
             console.error('ProxyStreamerBotClient.doAction: Failed to trigger remote action', err);
             return { status: 'error', error: err };
         }
+    }
+
+    disconnect() {
+        this._rejectPendingGetActions(new Error('Proxy Streamer.bot client disconnected'));
+        this.localClient.disconnect?.();
     }
 }
 
@@ -783,48 +812,74 @@ function createDiceDeckClient(client) {
 }
 
 /**
- * Initializes and connects to Streamer.bot on the specified port, assigning the appropriate client abstraction to `window.sbClient`.
- *
- * Disconnects any previous client, attempts to establish a new connection, fetches available actions, and updates the UI connection status. If the connection fails or the client is unavailable, updates the UI and rejects the promise with an error.
+ * Performs one complete Streamer.bot connection and initialization attempt.
  *
  * @param {string} port - The port to connect to Streamer.bot.
- * @returns {Promise<void>} Resolves when the connection and action fetch (if available) complete; rejects if connection fails or client is unavailable.
+ * @param {Function} [onConnectionLost] - Called if the native connection is lost after opening.
+ * @returns {Promise<{nativeClient: Object, sbClient: DiceDeckClient, actions: Array}>} A fully initialized connection.
  */
-async function setupStreamerBot(port) {
-    SetConnectionStatus(false);
+async function setupStreamerBot(port, onConnectionLost = () => {}) {
     if (!window.StreamerbotClient) {
-        console.error('StreamerbotClient is not available: window.StreamerbotClient is undefined.');
-        return Promise.reject('StreamerbotClient not available');
+        throw new Error('StreamerbotClient not available');
     }
-    port = port || '8080';
-    return tryStreamerbotClientConnect(port).then(async (client) => {
-        window.sbClient = createDiceDeckClient(client);
-        console.log('window.sbClient assigned:', window.sbClient);
-        if (window.sbClient.init) {
-            console.log('About to call sbClient.init()');
-            await window.sbClient.init();
-        }
-        // Fetch available actions immediately after connection
-        if (window.sbClient.getActions) {
-            const response = await window.sbClient.getActions();
-            if (response && response.status === 'ok' && Array.isArray(response.actions)) {
-                appState.availableActions = response.actions;
+
+    let initializingClient = null;
+    const nativeClient = await tryStreamerbotClientConnect(
+        port || '8080',
+        2000,
+        reason => {
+            initializingClient?.disconnect();
+            onConnectionLost(reason);
+        },
+    );
+
+    return initializeDiceDeckClient(
+        nativeClient,
+        createDiceDeckClient,
+        client => {
+            initializingClient = client;
+            pendingStreamerBotClient = client;
+        },
+    );
+}
+
+function formatRetryDelay(delayMs) {
+    const seconds = delayMs / 1000;
+    if (seconds >= 60 && seconds % 60 === 0) {
+        const minutes = seconds / 60;
+        return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+    }
+    return `${seconds} second${seconds === 1 ? '' : 's'}`;
+}
+
+function startStreamerBotConnection(port) {
+    const supervisor = new ConnectionSupervisor({
+        connect: onConnectionLost => setupStreamerBot(port, onConnectionLost),
+        disconnect: connection => connection.sbClient.disconnect(),
+        onStateChange({ state, connection, reason, delayMs }) {
+            const bar = document.getElementById('status-text');
+            if (state === 'ready') {
+                window.sbClient = connection.sbClient;
+                appState.availableActions = connection.actions;
+                SetConnectionStatus(true);
+                return;
             }
-        }
-        return Promise.resolve(); // No actions to fetch
-    }).then(() => {
-        SetConnectionStatus(true);
-        return Promise.resolve();
-    }).catch((err) => {
-        SetConnectionStatus(false);
-        let reason = err && err.reason ? err.reason : err;
-        console.warn('[DiceDeck] Failed to connect to Streamer.bot:', reason);
-        const bar = document.getElementById('status-text');
-        if (bar) {
-            bar.textContent = `Failed to connect to Streamer.bot: ${reason}`;
-        }
-        return Promise.reject(err);
+
+            window.sbClient = null;
+            SetConnectionStatus(false);
+            if (state === 'connecting') {
+                bar.textContent = 'Connecting to Streamer.bot...';
+                return;
+            }
+
+            const detail = reason?.reason || reason?.message || String(reason || 'disconnected');
+            bar.textContent = `Streamer.bot unavailable (${detail}). Retrying in ${formatRetryDelay(delayMs)}.`;
+        },
     });
+
+    window.connectionSupervisor = supervisor;
+    void supervisor.start();
+    return supervisor;
 }
 
 /**
@@ -1182,7 +1237,7 @@ function animateGridBlur() {
     requestAnimationFrame(animateGridBlur);
 }
 
-// On DOMContentLoaded, try normal connect, else discover
+// Load the interface and start supervised Streamer.bot recovery.
 window.addEventListener('DOMContentLoaded', async () => {
     SetConnectionStatus(false);
     if (noAnim) {
@@ -1202,7 +1257,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     const urlParams = new URLSearchParams(window.location.search);
 
     const port = urlParams.get('port') || '8080';
-    await setupStreamerBot(port);
+    startStreamerBotConnection(port);
 
     animatePolygonalMesh();
     animateGridBlur();
