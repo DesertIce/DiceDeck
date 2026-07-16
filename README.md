@@ -33,7 +33,8 @@ DiceDeck is a customizable, grid-based control panel for Streamer.bot, built wit
 
 ### Connecting to Streamer.bot
 - By default, DiceDeck connects to `127.0.0.1:8080`.
-- If connection fails, you will be prompted to check your port and try again. LAN scan/auto-discovery is no longer supported.
+- DiceDeck automatically reconnects in place if the connection fails, initialization does not complete, or an established connection drops. Retries begin after 5 seconds, double after each failed complete attempt, and stop increasing at 5 minutes. The delay resets after a fully successful initialization.
+- LAN scan/auto-discovery is not supported.
 
 ## Remote/Proxy Mode: Using DiceDeck with a Remote Streamer.bot
 
@@ -58,6 +59,7 @@ If DiceDeck is running on a different machine than your main Streamer.bot instan
   - Example: `index.html?proxy&port=8080`
 - DiceDeck will use the proxy logic automatically.
 - All button actions and action lists will be relayed via the proxy instance.
+- Proxy mode is considered connected only after both relay actions are found and the remote action list is received. Missing relay actions, remote action-list timeouts, and later disconnects use the same automatic retry policy as direct connections.
 
 ### When to Use Proxy Mode
 - When DiceDeck is running on a device that cannot directly reach the main Streamer.bot instance
@@ -150,4 +152,4 @@ DiceDeck uses a `data.json` file to store your grid layout and button configurat
 - `data.json` – Grid and button configuration
 
 ## License
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details. 
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
