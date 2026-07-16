@@ -15,7 +15,14 @@ function createElement() {
     };
 }
 
-function loadScript({ search = '', StreamerbotClient, ConnectionSupervisor } = {}) {
+function loadScript({
+    search = '',
+    StreamerbotClient,
+    ConnectionSupervisor,
+    DateImplementation = Date,
+    setIntervalFn = setInterval,
+    clearIntervalFn = clearInterval,
+} = {}) {
     const elements = new Map();
     const document = {
         hidden: false,
@@ -37,8 +44,11 @@ function loadScript({ search = '', StreamerbotClient, ConnectionSupervisor } = {
         navigator: {},
         console: { log() {}, warn() {}, error() {} },
         URLSearchParams,
+        Date: DateImplementation,
         setTimeout,
         clearTimeout,
+        setInterval: setIntervalFn,
+        clearInterval: clearIntervalFn,
         requestAnimationFrame() {},
         alert() {},
         ConnectionSupervisor,
@@ -233,5 +243,86 @@ test('starts recovery without awaiting the connection and publishes only ready c
     assert.equal(
         runtime.elements.get('status-text').textContent,
         'Streamer.bot unavailable (offline). Retrying in 5 minutes.',
+    );
+    supervisor.options.onStateChange({ state: 'connecting' });
+});
+
+test('updates and clears the retry countdown as connection state changes', () => {
+    let supervisor;
+    let now = 0;
+    const intervals = [];
+    class FakeConnectionSupervisor {
+        constructor(options) {
+            this.options = options;
+            supervisor = this;
+        }
+
+        start() { return Promise.resolve(); }
+    }
+    class FakeDate extends Date {
+        static now() { return now; }
+    }
+    const runtime = loadScript({
+        ConnectionSupervisor: FakeConnectionSupervisor,
+        DateImplementation: FakeDate,
+        setIntervalFn(callback, delayMs) {
+            const interval = { callback, delayMs, cancelled: false };
+            intervals.push(interval);
+            return interval;
+        },
+        clearIntervalFn(interval) {
+            interval.cancelled = true;
+        },
+    });
+    runtime.startStreamerBotConnection('8080');
+
+    supervisor.options.onStateChange({
+        state: 'waiting',
+        reason: new Error('offline'),
+        delayMs: 5000,
+    });
+
+    assert.equal(intervals.length, 1);
+    assert.equal(intervals[0].delayMs, 1000);
+    now = 1000;
+    intervals[0].callback();
+    assert.equal(
+        runtime.elements.get('status-text').textContent,
+        'Streamer.bot unavailable (offline). Retrying in 4 seconds.',
+    );
+
+    supervisor.options.onStateChange({ state: 'connecting' });
+    assert.equal(intervals[0].cancelled, true);
+    assert.equal(
+        runtime.elements.get('status-text').textContent,
+        'Connecting to Streamer.bot...',
+    );
+
+    supervisor.options.onStateChange({
+        state: 'waiting',
+        reason: new Error('still offline'),
+        delayMs: 10000,
+    });
+    assert.equal(intervals.length, 2);
+    assert.equal(
+        runtime.elements.get('status-text').textContent,
+        'Streamer.bot unavailable (still offline). Retrying in 10 seconds.',
+    );
+
+    now = 2000;
+    intervals[1].callback();
+    assert.equal(
+        runtime.elements.get('status-text').textContent,
+        'Streamer.bot unavailable (still offline). Retrying in 9 seconds.',
+    );
+
+    supervisor.options.onStateChange({
+        state: 'ready',
+        connection: { sbClient: {}, actions: [] },
+    });
+    assert.equal(intervals[1].cancelled, true);
+    assert.equal(
+        runtime.elements.get('status-text').textContent,
+        'Connected to Streamer.bot',
     );
 });
