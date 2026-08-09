@@ -40,6 +40,141 @@ function SetConnectionStatus(connected) {
         indicator.classList.add('disconnected');
         indicator.classList.remove('connected');
     }
+    statusBarAutoHide.setConnected(connected);
+}
+
+/**
+ * Decides whether the status bar should remain visible (Windows taskbar auto-hide rules).
+ * @param {{ connected: boolean, editMode: boolean, pointerNearTop: boolean, hoveringBar: boolean, focusWithinBar: boolean }} state
+ * @returns {boolean}
+ */
+function shouldStatusBarStayVisible(state) {
+    return !state.connected
+        || state.editMode
+        || state.pointerNearTop
+        || state.hoveringBar
+        || state.focusWithinBar;
+}
+
+/**
+ * Auto-hides the status bar when Streamer.bot is stably connected, revealing it
+ * when disconnected, while editing, or when the pointer nears the top edge.
+ */
+const statusBarAutoHide = (() => {
+    const EDGE_PX = 12;
+    const HIDE_DELAY_MS = 450;
+    let connected = false;
+    let pointerNearTop = false;
+    let hoveringBar = false;
+    let hideTimer = null;
+    let statusBar = null;
+    let started = false;
+
+    function clearHideTimer() {
+        if (hideTimer !== null) {
+            clearTimeout(hideTimer);
+            hideTimer = null;
+        }
+    }
+
+    function focusWithinBar() {
+        return Boolean(statusBar && statusBar.contains(document.activeElement));
+    }
+
+    function applyVisibility() {
+        if (!statusBar) return;
+        const stayVisible = shouldStatusBarStayVisible({
+            connected,
+            editMode: Boolean(appState.editMode),
+            pointerNearTop,
+            hoveringBar,
+            focusWithinBar: focusWithinBar(),
+        });
+
+        if (stayVisible) {
+            clearHideTimer();
+            statusBar.classList.remove('is-autohidden');
+            return;
+        }
+
+        if (hideTimer !== null) return;
+        hideTimer = setTimeout(() => {
+            hideTimer = null;
+            const stillHidden = !shouldStatusBarStayVisible({
+                connected,
+                editMode: Boolean(appState.editMode),
+                pointerNearTop,
+                hoveringBar,
+                focusWithinBar: focusWithinBar(),
+            });
+            if (stillHidden) {
+                statusBar.classList.add('is-autohidden');
+            }
+        }, HIDE_DELAY_MS);
+    }
+
+    function setPointerNearTop(nearTop) {
+        if (pointerNearTop === nearTop) return;
+        pointerNearTop = nearTop;
+        applyVisibility();
+    }
+
+    function onPointerMove(event) {
+        setPointerNearTop(event.clientY <= EDGE_PX);
+    }
+
+    function onPointerLeaveDocument() {
+        pointerNearTop = false;
+        hoveringBar = false;
+        applyVisibility();
+    }
+
+    return {
+        /**
+         * Wires listeners once the status bar is in the DOM.
+         */
+        start() {
+            if (started) return;
+            statusBar = document.getElementById('status-bar');
+            if (!statusBar) {
+                console.error('statusBarAutoHide: #status-bar missing');
+                return;
+            }
+            started = true;
+
+            statusBar.addEventListener('pointerenter', () => {
+                hoveringBar = true;
+                applyVisibility();
+            });
+            statusBar.addEventListener('pointerleave', () => {
+                hoveringBar = false;
+                applyVisibility();
+            });
+            statusBar.addEventListener('focusin', applyVisibility);
+            statusBar.addEventListener('focusout', () => {
+                requestAnimationFrame(applyVisibility);
+            });
+
+            document.addEventListener('pointermove', onPointerMove, { passive: true });
+            document.documentElement.addEventListener('pointerleave', onPointerLeaveDocument);
+
+            applyVisibility();
+        },
+        /**
+         * @param {boolean} isConnected
+         */
+        setConnected(isConnected) {
+            connected = Boolean(isConnected);
+            applyVisibility();
+        },
+        /** Re-evaluate after edit mode or other app-state changes. */
+        refresh: applyVisibility,
+    };
+})();
+
+if (typeof window !== 'undefined') {
+    window.shouldStatusBarStayVisible = shouldStatusBarStayVisible;
+    window.statusBarAutoHide = statusBarAutoHide;
 }
 
 // Refactored: Encapsulate app state in a single object
@@ -443,6 +578,7 @@ function setupEditModeToggle() {
         editBtn.textContent = appState.editMode ? 'Exit Edit Mode' : 'Edit Mode';
         appState.unsavedChanges = false;
         setSaveButtonState();
+        statusBarAutoHide.refresh();
         if (appState.editMode && window.sbClient && window.sbClient.getActions) {
             try {
                 const response = await window.sbClient.getActions();
@@ -1254,6 +1390,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         return;
     }
     setupEditModeToggle();
+    statusBarAutoHide.start();
     const urlParams = new URLSearchParams(window.location.search);
 
     const port = urlParams.get('port') || '8080';

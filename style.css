@@ -19,6 +19,20 @@
   padding: 6px 8px;
   gap: 8px;
   overflow: visible;
+  transform: translateY(0);
+  transition: transform 0.22s ease;
+}
+
+/* Windows taskbar-style auto-hide when connected and idle */
+#status-bar.is-autohidden {
+  transform: translateY(calc(-100% - 4px));
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #status-bar {
+    transition: none;
+  }
 }
 
 #status-indicator {
@@ -226,10 +240,10 @@ body.no-anim #debugImportBtn:active {
 }
 #main-viewport {
   position: fixed;
-  top: 32px;
+  top: 0;
   left: 0;
   width: 100vw;
-  height: calc(100vh - 32px);
+  height: 100vh;
   display: flex;
   flex-direction: column;
   background: none;
