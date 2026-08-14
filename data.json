@@ -4,20 +4,6 @@
   "buttons": [
     {
       "row": 0,
-      "col": 0,
-      "title": "Play Hype Music",
-      "icon": "",
-      "action_id": "4a429311-41d9-4992-8090-30908d0b99dc"
-    },
-    {
-      "row": 0,
-      "col": 1,
-      "title": "+ Hype Train Music",
-      "icon": "",
-      "action_id": "dc7d3fd3-cb5a-4499-a102-da6d08e4cb0e"
-    },
-    {
-      "row": 0,
       "col": 3,
       "title": "30s Ad",
       "icon": "",
@@ -50,20 +36,6 @@
       "title": "Hello Gordon",
       "icon": "",
       "action_id": "f15902fa-387d-45b9-af5a-a6e1ececba84"
-    },
-    {
-      "row": 1,
-      "col": 0,
-      "title": "Stop Hype Music",
-      "icon": "",
-      "action_id": "599e47da-3c29-4932-a728-4d8455ffafaf"
-    },
-    {
-      "row": 1,
-      "col": 1,
-      "title": "- Hype Train Music",
-      "icon": "",
-      "action_id": "54e59d3a-0e4b-430f-97eb-c33faf8431b9"
     },
     {
       "row": 1,
@@ -157,14 +129,14 @@
       "action_id": "9b0f9d02-ea04-47fb-a019-b6d14b40a183"
     },
     {
-      "row": 4,
+      "row": 1,
       "col": 0,
       "title": "Enable Cam",
       "icon": "",
       "action_id": "ebab4225-bf49-4a19-8546-0a904170a907"
     },
     {
-      "row": 4,
+      "row": 1,
       "col": 1,
       "title": "Disable Cam",
       "icon": "",
@@ -192,14 +164,14 @@
       "action_id": "3bd94179-f6ba-431d-a6fa-ce393646d417"
     },
     {
-      "row": 3,
+      "row": 0,
       "col": 0,
       "title": "Enable Cam Blur",
       "icon": "",
       "action_id": "4332a50c-8646-432b-a066-dd59a4bb48f4"
     },
     {
-      "row": 3,
+      "row": 0,
       "col": 1,
       "title": "Disable Cam Blur",
       "icon": "",
@@ -214,41 +186,34 @@
     },
     {
       "row": 5,
-      "col": 4,
+      "col": 6,
       "title": "Screenshot",
       "icon": "",
       "action_id": "97510037-edfe-4b33-9304-a1d597dfccf5"
     },
     {
       "row": 5,
-      "col": 3,
-      "title": "Yes/No Poll",
-      "icon": "",
-      "action_id": "989e6de6-647e-4f2d-bdc3-a8fb063c90c8"
-    },
-    {
-      "row": 7,
       "col": 5,
       "title": "Toggle",
       "icon": "ic:outline-question-mark",
       "action_id": "50eb8a20-c344-44ca-a89f-c57bd6953dcd"
     },
     {
-      "row": 5,
-      "col": 7,
+      "row": 4,
+      "col": 1,
       "title": "!Song",
       "icon": "",
       "action_id": "dc8b8a31-91ca-4e82-b3ed-5d76c4725731"
     },
     {
-      "row": 4,
+      "row": 6,
       "col": 7,
       "title": "!english",
       "icon": "",
       "action_id": "f8988697-b5e3-40a8-b974-553df4947ee4"
     },
     {
-      "row": 6,
+      "row": 7,
       "col": 5,
       "title": "Toggle Studio",
       "icon": "",
@@ -333,20 +298,13 @@
     },
     {
       "row": 6,
-      "col": 7,
-      "title": "BotFollowAlert",
-      "icon": "",
-      "action_id": "6a850015-c298-4ba4-ba69-ad5588b83a3c"
-    },
-    {
-      "row": 5,
       "col": 6,
       "title": "Socials",
       "icon": "",
       "action_id": "b9e0e2aa-5689-43ba-bba0-ecaf381d9e7d"
     },
     {
-      "row": 6,
+      "row": 7,
       "col": 6,
       "title": "!Sere",
       "icon": "",
@@ -402,18 +360,11 @@
       "action_id": "afa39ee7-1466-44de-8f34-8226d22788ed"
     },
     {
-      "row": 4,
-      "col": 6,
+      "row": 6,
+      "col": 5,
       "title": "Discord Link",
       "icon": "",
       "action_id": "e4b02876-9de3-4146-8d99-6bba739f0c89"
-    },
-    {
-      "row": 7,
-      "col": 6,
-      "title": "Clip Marker",
-      "icon": "",
-      "action_id": "bc101835-da9e-4d08-99c0-9f149664cc88"
     },
     {
       "row": 7,
@@ -437,8 +388,8 @@
       "action_id": "a8aa2372-b035-43d2-a87f-ccc915b4f508"
     },
     {
-      "row": 5,
-      "col": 5,
+      "row": 4,
+      "col": 0,
       "title": "SB Test",
       "action_id": "fea6eb55-dc8a-4800-afaa-f6889838ae82"
     }
