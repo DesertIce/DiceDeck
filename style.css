@@ -316,6 +316,40 @@ body.no-anim #debugImportBtn:active {
   background: #23272f;
   opacity: 0.2;
 }
+.grid-button[data-action-state="missing"] {
+  position: relative;
+  border-color: #ffb454;
+  filter: saturate(0.7);
+  box-shadow: 0 0 0 2px rgba(255, 180, 84, 0.28), 6px 8px 16px 0 rgba(0,0,0,0.48);
+}
+body:not(.edit-mode) .grid-button[data-action-state="missing"] {
+  cursor: not-allowed;
+}
+.grid-button[data-action-state="missing"]:hover,
+.grid-button[data-action-state="missing"]:focus-visible {
+  background: #302a25;
+  outline: 2px solid #ffb454;
+  outline-offset: 2px;
+  box-shadow: 0 0 12px 3px rgba(255, 180, 84, 0.55), 0 2px 8px 0 rgba(0,0,0,0.18);
+}
+.action-missing-badge {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.45rem;
+  display: grid;
+  place-items: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.2rem;
+  color: #fff;
+  background: #9a3412;
+  border: 1px solid #fed7aa;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1;
+  pointer-events: none;
+}
 .grid-button.drag-over {
   outline: 2px dashed #888;
 }
@@ -368,6 +402,16 @@ body.no-anim #debugImportBtn:active {
   font-size: 1rem;
   margin-bottom: 12px;
   font-family: inherit;
+}
+.edit-modal .action-warning {
+  margin-top: -12px;
+  padding: 8px 10px;
+  color: #fff7ed;
+  background: rgba(154, 52, 18, 0.42);
+  border: 1px solid #ffb454;
+  border-radius: 8px;
+  font-size: 0.92rem;
+  line-height: 1.35;
 }
 .edit-modal .modal-actions {
   display: flex;

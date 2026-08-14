@@ -182,12 +182,53 @@ const appState = {
     gridData: null,
     editMode: false,
     availableActions: [],
+    actionCatalogReady: false,
     dragSrcIdx: null,
     gridBlurMin: 4,
     gridBlurMax: 12,
     unsavedChanges: false,
 };
 window.appState = appState;
+
+/**
+ * Classifies a saved action ID against the latest authoritative action catalog.
+ * @param {string} actionId
+ * @param {boolean} catalogReady
+ * @param {Set<string>} availableActionIds
+ * @returns {'unknown'|'valid'|'missing'}
+ */
+function getActionMappingState(actionId, catalogReady, availableActionIds) {
+    if (!catalogReady) return 'unknown';
+    return actionId && availableActionIds.has(actionId) ? 'valid' : 'missing';
+}
+
+function setActionCatalog(actions) {
+    appState.availableActions = actions;
+    appState.actionCatalogReady = true;
+    if (appState.gridData) renderGrid(appState.gridData);
+}
+
+function markActionCatalogUnknown() {
+    const catalogChanged = appState.actionCatalogReady || appState.availableActions.length > 0;
+    appState.actionCatalogReady = false;
+    appState.availableActions = [];
+    if (catalogChanged && appState.gridData) renderGrid(appState.gridData);
+}
+
+async function refreshActionCatalog(client) {
+    try {
+        const response = await client.getActions();
+        if (response?.status !== 'ok' || !Array.isArray(response.actions)) {
+            markActionCatalogUnknown();
+            return false;
+        }
+        setActionCatalog(response.actions);
+        return true;
+    } catch (error) {
+        markActionCatalogUnknown();
+        return false;
+    }
+}
 
 // Utility to map action_id to action name
 /**
@@ -261,6 +302,7 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
         }
         btnMap[`${btn.row},${btn.col}`] = { ...btn, idx };
     });
+    const availableActionIds = new Set(appState.availableActions.map(action => action.id));
 
     /**
      * Handles grid button activation for both click and touch events, triggering the associated Streamer.bot action if the client is connected.
@@ -278,6 +320,7 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
         }
 
         const btn = e.currentTarget.__btnData;
+        if (e.currentTarget.dataset.actionState === 'missing') return;
         // Use optional chaining for cleaner code
         if (window.sbClient?.doAction) {
             window.sbClient.doAction(btn.action_id).catch(err => {
@@ -302,6 +345,25 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
                     el.innerHTML += `<span class="button-icon iconify" data-icon="${sanitizeString(btn.icon)}"></span>`;
                 }
                 el.innerHTML += `<span class="button-title">${sanitizeString(btn.title)}</span>`;
+                const actionState = getActionMappingState(
+                    btn.action_id,
+                    appState.actionCatalogReady,
+                    availableActionIds,
+                );
+                el.dataset.actionState = actionState;
+                if (actionState === 'missing') {
+                    const badge = document.createElement('span');
+                    badge.className = 'action-missing-badge';
+                    badge.textContent = '!';
+                    badge.setAttribute('aria-hidden', 'true');
+                    el.appendChild(badge);
+                    el.setAttribute(
+                        'aria-label',
+                        `${btn.title || 'Untitled button'} — action unavailable`,
+                    );
+                    el.title = 'Action unavailable. Edit this button to choose a replacement.';
+                    if (!appState.editMode) el.setAttribute('aria-disabled', 'true');
+                }
                 if (appState.editMode) {
                     el.setAttribute('draggable', 'true');
                     el.ondragstart = handleDragStart;
@@ -321,7 +383,11 @@ function renderGrid({ rows, cols, buttons, gap, blurMin, blurMax }) {
                         if (e.button === 1) {
                             e.preventDefault();
                             // Apply optional chaining consistently and add error handling
-                            if (window.sbClient?.doAction && btn.action_id) {
+                            if (
+                                el.dataset.actionState !== 'missing'
+                                && window.sbClient?.doAction
+                                && btn.action_id
+                            ) {
                                 window.sbClient.doAction(btn.action_id).catch(err => {
                                     console.error('Failed to trigger action:', btn.action_id, err);
                                     alert('Failed to trigger action: ' + btn.action_id);
@@ -580,16 +646,7 @@ function setupEditModeToggle() {
         setSaveButtonState();
         statusBarAutoHide.refresh();
         if (appState.editMode && window.sbClient && window.sbClient.getActions) {
-            try {
-                const response = await window.sbClient.getActions();
-                if (response && response.status === 'ok' && Array.isArray(response.actions)) {
-                    // Uncomment for debugging:
-                    // if (window.DEBUG) console.log(response.actions);
-                    appState.availableActions = response.actions;
-                }
-            } catch (e) {
-                appState.availableActions = [];
-            }
+            await refreshActionCatalog(window.sbClient);
         }
         updateInlineSettings();
         renderGrid(appState.gridData);
@@ -996,12 +1053,13 @@ function startStreamerBotConnection(port) {
             const bar = document.getElementById('status-text');
             if (state === 'ready') {
                 window.sbClient = connection.sbClient;
-                appState.availableActions = connection.actions;
+                setActionCatalog(connection.actions);
                 SetConnectionStatus(true);
                 return;
             }
 
             window.sbClient = null;
+            markActionCatalogUnknown();
             SetConnectionStatus(false);
             if (state === 'connecting') {
                 bar.textContent = 'Connecting to Streamer.bot...';
@@ -1016,6 +1074,75 @@ function startStreamerBotConnection(port) {
     window.connectionSupervisor = supervisor;
     void supervisor.start();
     return supervisor;
+}
+
+/**
+ * Populates the edit form without discarding a saved action that is no longer
+ * present in the authoritative Streamer.bot action catalog.
+ * @param {HTMLSelectElement} actionSelect
+ * @param {Object} button
+ * @returns {boolean} Whether the saved mapping is confirmed missing.
+ */
+function populateEditActionSelect(actionSelect, button) {
+    const actions = appState.actionCatalogReady ? appState.availableActions : [];
+    const legacyMatch = !button.action_id && button.action
+        ? actions.find(action => action.name === button.action)
+        : null;
+    const selectedActionId = button.action_id || legacyMatch?.id || '';
+    const availableActionIds = new Set(actions.map(action => action.id));
+    const actionState = getActionMappingState(
+        selectedActionId,
+        appState.actionCatalogReady,
+        availableActionIds,
+    );
+
+    if (actionState === 'missing') {
+        const missingOption = document.createElement('option');
+        const missingReference = selectedActionId || button.action || '';
+        const shortReference = missingReference
+            ? `${missingReference.slice(0, 24)}${missingReference.length > 24 ? '…' : ''}`
+            : 'no action ID';
+        missingOption.value = selectedActionId;
+        missingOption.textContent = `Missing action (${shortReference}) — choose a replacement`;
+        missingOption.title = missingReference;
+        missingOption.selected = true;
+        missingOption.dataset.actionState = 'missing';
+        if (!selectedActionId && button.action) {
+            missingOption.dataset.legacyActionName = button.action;
+        }
+        actionSelect.appendChild(missingOption);
+    } else if (actionState === 'unknown') {
+        const currentOption = document.createElement('option');
+        currentOption.value = selectedActionId;
+        currentOption.textContent = button.action || 'Current action — availability unknown';
+        currentOption.selected = true;
+        currentOption.dataset.actionState = 'unknown';
+        if (!selectedActionId && button.action) {
+            currentOption.dataset.legacyActionName = button.action;
+        }
+        actionSelect.appendChild(currentOption);
+    }
+
+    actions.forEach(action => {
+        const option = document.createElement('option');
+        option.value = action.id;
+        option.textContent = action.name;
+        option.selected = action.id === selectedActionId;
+        actionSelect.appendChild(option);
+    });
+
+    return actionState === 'missing';
+}
+
+function applySelectedAction(button, actionSelect) {
+    const selectedOption = actionSelect.selectedOptions[0];
+    const selectedActionId = actionSelect.value;
+    button.action_id = selectedActionId;
+    if (!selectedActionId && selectedOption?.dataset.legacyActionName) {
+        button.action = selectedOption.dataset.legacyActionName;
+        return;
+    }
+    delete button.action;
 }
 
 /**
@@ -1044,6 +1171,7 @@ function openEditModal(idx) {
         <input id="edit-icon" type="text" value="${sanitizeString(btn.icon || '')}" placeholder="Optional iconify name" />
         <label for="edit-action">Action</label>
         <select id="edit-action"></select>
+        <div id="edit-action-warning" class="action-warning" role="status" hidden></div>
         <div class="add-remove-btns">
             <button class="remove-btn">Remove Button</button>
         </div>
@@ -1054,29 +1182,23 @@ function openEditModal(idx) {
     `;
     // Populate actions
     const actionSelect = modal.querySelector('#edit-action');
-    if (appState.availableActions && appState.availableActions.length > 0) {
-        appState.availableActions.forEach(a => {
-            const opt = document.createElement('option');
-            opt.value = a.id;
-            opt.textContent = a.name;
-            // Select by action_id, fallback to action name for legacy
-            if ((btn.action_id && a.id === btn.action_id) || (!btn.action_id && btn.action && a.name === btn.action)) opt.selected = true;
-            actionSelect.appendChild(opt);
-        });
-    } else {
-        const opt = document.createElement('option');
-        opt.value = btn.action_id || '';
-        opt.textContent = btn.action || '';
-        opt.selected = true;
-        actionSelect.appendChild(opt);
+    const actionWarning = modal.querySelector('#edit-action-warning');
+    populateEditActionSelect(actionSelect, btn);
+    function updateActionWarning() {
+        const selectedOption = actionSelect.selectedOptions[0];
+        const isMissing = selectedOption?.dataset.actionState === 'missing';
+        actionWarning.hidden = !isMissing;
+        actionWarning.textContent = isMissing
+            ? 'This action is no longer available. Choose a replacement to repair the button.'
+            : '';
     }
+    actionSelect.addEventListener('change', updateActionWarning);
+    updateActionWarning();
     // Save handler
     modal.querySelector('#edit-save').onclick = () => {
         btn.title = modal.querySelector('#edit-title').value;
         btn.icon = modal.querySelector('#edit-icon').value.trim() || undefined;
-        btn.action_id = actionSelect.value;
-        // Remove legacy action name if present
-        delete btn.action;
+        applySelectedAction(btn, actionSelect);
         document.body.removeChild(backdrop);
         document.body.removeChild(modal);
         renderGrid(appState.gridData);

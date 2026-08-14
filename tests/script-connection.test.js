@@ -226,6 +226,7 @@ test('starts recovery without awaiting the connection and publishes only ready c
     supervisor.options.onStateChange({ state: 'ready', connection: readyConnection });
     assert.equal(runtime.window.sbClient, readyConnection.sbClient);
     assert.equal(runtime.window.appState.availableActions, readyConnection.actions);
+    assert.equal(runtime.window.appState.actionCatalogReady, true);
     assert.equal(runtime.elements.get('status-text').textContent, 'Connected to Streamer.bot');
 
     supervisor.options.onStateChange({
@@ -234,6 +235,7 @@ test('starts recovery without awaiting the connection and publishes only ready c
         delayMs: 300000,
     });
     assert.equal(runtime.window.sbClient, null);
+    assert.equal(runtime.window.appState.actionCatalogReady, false);
     assert.equal(
         runtime.elements.get('status-text').textContent,
         'Streamer.bot unavailable (offline). Retrying in 5 minutes.',
